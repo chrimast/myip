@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IP检测 - IP信息查询</title>
+  <script src="https://cdn.tailwindcss.com">
+</script>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js">
+
+</script>
+
+  <style>
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+      background-color:#f6f8fa;
+      color:#1a1a1a;
+      -webkit-font-smoothing:antialiased;
+    }
+    .text-min{font-size:12px;}
+    .label-text{color:#666;font-weight:500;min-width:120px;font-size:14px;}
+    .value-text{color:#1a1a1a;font-weight:600;text-align:right;font-size:14px;word-break:break-all;}
+    .search-input:focus{outline:none;border-color:#007aff;box-shadow:0 0 0 3px rgba(0,122,255,0.1);}
+
+    /* Pills */
+    .pill{
+      display:inline-flex;align-items:center;
+      padding:6px 8px;border-radius:999px;
+      font-size:12px;font-weight:800;line-height:1;
+      border:1px solid rgba(0,0,0,0.08);
+      white-space:nowrap;
+    }
+    .pill-red { background:#fee2e2; color:#b91c1c; border-color:#fecaca; } /* 广播/机房 */
+    .pill-g1  { background:#dcfce7; color:#166534; border-color:#bbf7d0; } /* 原生/家庭 */
+    .pill-g2  { background:#ffedd5; color:#c2410c; border-color:#fdba74; } /* 商业 */
+    .pill-gray{ background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
+
+    /* Human/Bot bar */
+    .hb-track{
+      height:10px;border-radius:999px;background:#f3f4f6;overflow:hidden;
+      box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);
+      display:flex;
+    }
+    .hb-human{height:10px;background:#34d399;}
+    .hb-bot{height:10px;background:#fb7185;}
+
+    /* Risk score: segmented + pointer */
+    .score-track{
+      position:relative;height:10px;border-radius:999px;
+      background:linear-gradient(
+        90deg,
+        #16a34a 0%,
+        #16a34a 20%,
+        #facc15 40%,
+        #fb923c 60%,
+        #ef4444 80%,
+        #ef4444 100%
+      );
+      box-shadow:inset 0 0 0 1px rgba(0,0,0,0.06);
+      overflow:visible;
+    }
+    .score-ticks{
+      margin-top:10px;display:flex;justify-content:space-between;
+      font-size:11px;color:#9ca3af;user-select:none;
+    }
+    .score-marker{
+      position:absolute;top:-14px;transform:translateX(-50%);
+      pointer-events:none;
+    }
+    .score-badge{
+      font-size:12px;font-weight:900;color:#111827;background:#fff;
+      border:1px solid rgba(0,0,0,0.12);
+      border-radius:999px;padding:5px 10px;
+      box-shadow:0 10px 24px rgba(0,0,0,0.10);
+      white-space:nowrap;line-height:1;
+    }
+    .score-pointer{
+      width:0;height:0;margin:3px auto 0;
+      border-left:6px solid transparent;border-right:6px solid transparent;
+      border-bottom:9px solid rgba(17,24,39,0.85);
+      filter:drop-shadow(0 2px 2px rgba(0,0,0,0.10));
+    }
+
+    /* ✅ BGP mini styles */
+    .bgp-pill{
+      display:inline-flex; align-items:center; justify-content:center;
+      font-size:11px; font-weight:900;
+      padding:4px 8px; border-radius:999px;
+      background:#eef2ff; color:#3730a3; border:1px solid #e0e7ff;
+      white-space:nowrap;
+    }
+    .bgp-link{
+      color:#2563eb; font-weight:800;
+    }
+    .bgp-link:hover{ color:#1d4ed8; }
+
+    /* --- BGP Graph (he.net-style) --- */
+    #bgpGraph{ width:100%; height:420px; }
+    .bgp-legend{ background:rgba(255,255,255,.92); backdrop-filter:saturate(180%) blur(8px); }
+    .bgp-dot{ width:10px; height:10px; border-radius:9999px; display:inline-block; }
+
+  .muted{opacity:.7;font-size:12px;}
+
+    .flag-emoji{
+      width:16px;
+      height:16px;
+      vertical-align:-2px;
+      display:inline-block;
+    }
+
+    /* BGP legend dots (match theme variables) */
+    .bgp-dot-tier1{ background: var(--bgp-tier1, #f97316) !important; }
+    .bgp-dot-nontier1{ background: var(--bgp-nontier1, #3b82f6) !important; }
+</style>
+<style>
+.vis-tooltip{
+  position:absolute;
+  visibility:hidden;
+  padding:6px 8px;
+  border-radius:8px;
+  font-size:12px;
+  line-height:1.2;
+  background:rgba(17,24,39,.92);
+  color:#fff;
+  z-index:9999;
+  max-width:320px;
+  pointer-events:none;
+  white-space:nowrap;
+}
+</style>
+</head>
+  <script src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js">
+
+</script>
+
+  <script>
+    // v14: vis-network loader (same-origin first, CDN fallback)
+    (function(){
+      function loadScript(src){
+        return new Promise(function(resolve, reject){
+          var s = document.createElement('script');
+          s.src = src;
+          s.async = true;
+          s.onload = function(){ resolve(src); };
+          s.onerror = function(){ reject(new Error("load failed: "+src)); };
+          document.head.appendChild(s);
+        });
+      }
+      window.__ensureVisNetwork = function(){
+        if(window.vis && window.vis.Network) return Promise.resolve("already");
+        var cdns = [
+          "https://cdn.jsdelivr.net/npm/vis-network/standalone/umd/vis-network.min.js",
+          "https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"
+        ];
+        var p = Promise.reject();
+        cdns.forEach(function(u){
+          p = p.catch(function(){
+            if(window.vis && window.vis.Network) return "already";
+            return loadScript(u);
+          });
+        });
+        return p.catch(function(err){
+          console.warn("vis-network load failed:", err);
+          return null;
+        });
+      };
+
+      // Hide common extension noise that confuses debugging
+      window.addEventListener('unhandledrejection', function(ev){
+        try{
+          var msg = (ev && ev.reason && (ev.reason.message || ev.reason.toString())) || "";
+          if(typeof msg === "string" && msg.indexOf("A listener indicated an asynchronous response") >= 0){
+            ev.preventDefault();
+          }
+        }catch(e){}
+      });
+    })();
+
+</script>
+
+<body class="py-12 px-4">
+  <div class="max-w-2xl mx-auto" id="pageRoot">
+
+    <div class="flex items-center justify-between mb-8">
+      <div class="flex items-center space-x-2">
+        <div class="px-2 py-1 bg-[#1a1a1a] rounded-xl flex items-center justify-center">
+          <span class="text-white font-bold text-xl">IPI.LI</span>
+        </div>
+        <span class="text-xl font-bold tracking-tight text-blue-600">IPI.LI</span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-4 flex items-center space-x-2">
+      <input type="text" id="ipInput" placeholder="输入 IP 或域名查询风险"
+             class="flex-1 px-4 py-2 bg-gray-50 rounded-lg border border-transparent search-input text-normal transition-all">
+      <button id="btnAnalyze"
+              class="bg-[#1a1a1a] text-white px-6 py-2 rounded-lg text-normal font-bold hover:bg-black transition">
+        分析
+      </button>
+    </div>
+
+    <div class="flex items-center justify-between mb-1 rounded-xl border border-gray-200">
+      <span class="px-6 py-1 text-xs text-sm text-gray-500">本机IP
+       <span id="myipBox" class="text-xs text-gray-500">Detecting...</span>
+      </span>
+
+      <span class="px-5 py-1 flex items-center gap-2">
+        <button id="btnShot" class="px-2 py-1 text-xs rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700" title="保存为图片" style="float:right;">截图</button>
+      </span>
+    </div>
+
+    <div id="errBox" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-4 text-sm"></div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden divide-y divide-gray-100 mb-4">
+      <div class="px-6 py-4 flex justify-between items-center">
+        <span class="label-text">查询目标</span>
+        <div class="flex items-center gap-2">
+          <span id="target_ip" class="value-text text-blue-600">Loading...</span>
+
+          <button id="btnEye" title="隐藏/显示IP"><img id="btnEyeImg" src="https://cdn.jsdelivr.net/npm/remixicon@4.9.1/icons/System/eye-off-line.svg" style="width:20px;height:20px;vertical-align:middle;" alt="toggle" /></button>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 flex justify-between items-center">
+        <span class="label-text">地理位置</span>
+        <span id="location" class="value-text">-</span>
+      </div>
+      <div class="px-6 py-4 flex justify-between items-center">
+        <span class="label-text">ASN 号码</span>
+        <span id="as" class="value-text">-</span>
+      </div>
+      <div class="px-6 py-4 flex justify-between items-center">
+        <span class="label-text">ASN 所有者</span>
+        <span id="asname" class="value-text">-</span>
+      </div>
+      <div class="px-6 py-4 flex justify-between items-center">
+        <span class="label-text">企业信息</span>
+        <span id="org" class="value-text">-</span>
+      </div>
+      <div class="px-6 py-4 flex justify-between items-center">
+        <span class="label-text">注册局/地区</span>
+        <span id="registry" class="value-text">-</span>
+      </div>
+
+      <div class="px-6 py-4 flex items-center">
+        <div class="flex items-center justify-between w-1/2 pr-3 border-r border-gray-100">
+          <span class="label-text" style="min-width:auto;">IP来源</span>
+          <div id="ip_source_box" class="flex justify-end">
+            <span class="pill pill-gray">-</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between w-1/2 pl-3">
+          <span class="label-text" style="min-width:auto;">IP属性</span>
+          <div id="ip_property_box" class="flex justify-end">
+            <span class="pill pill-gray">-</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-bold text-gray-700">人机流量比</div>
+        <div class="text-xs text-gray-400"> Human / Bot </div>
+      </div>
+
+      <div class="hb-track mb-2">
+        <div id="humanBar" class="hb-human" style="width: 0%"></div>
+        <div id="botBar" class="hb-bot" style="width: 0%"></div>
+      </div>
+
+      <div class="flex justify-between text-xs font-semibold">
+        <div class="text-emerald-600" id="humanLabel">Human -%</div>
+        <div class="text-rose-500" id="botLabel">Bot -%</div>
+      </div>
+
+      <div class="h-6"></div>
+
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-bold text-gray-700">IP风险系数</div>
+        <div class="text-xs text-gray-400">*估算怀疑度评分*</div>
+      </div>
+
+      <div class="relative">
+        <div class="score-track">
+          <div id="scoreMarker" class="score-marker" style="left: 0%;">
+            <div id="scoreBadge" class="score-badge">0% 低风险</div>
+            <div class="score-pointer"></div>
+          </div>
+        </div>
+        <div class="score-ticks">
+          <span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-bold text-gray-700">IP 坐标</div>
+        <div class="text-xs text-gray-400">
+          纬度 : <span id="latVal" class="font-extrabold text-gray-500">-</span>
+           / 经度 : <span id="lonVal" class="font-extrabold text-gray-500">-</span>
+          </div>
+      </div>
+
+      <div class="mt-4 overflow-hidden rounded-xl border border-gray-100">
+        <iframe id="mapFrame"
+                width="100%" height="260" style="border:0"
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+                src="about:blank"></iframe>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-2 mb-6 overflow-hidden">
+
+      <div id="neighborsBox" class="divide-y divide-gray-100">
+        <div class="px-4 py-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-sm font-bold text-gray-700">BGP 拓扑图</div>
+            <div class="text-xs text-gray-500">
+              可拖拽节点 / 滚轮缩放 / 双击节点打开 he.net Graph4
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="bgpFitBtn" class="px-2 py-1 text-xs rounded-md border border-gray-200 bg-white hover:bg-gray-50">全览</button>
+            </div>
+          </div>
+          <div id="bgpGraph" class="w-full rounded-xl border border-gray-100" style="height: 260px;"></div>
+
+          <div class="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+            <span class="inline-flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bgp-dot-tier1"></span>Tier1 上游</span>
+            <span class="inline-flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bgp-dot-nontier1"></span>非 Tier1 上游</span>
+            <span id="bgpExtLinks" class="text-xs text-gray-500"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <p class="text-center mt-12 text-gray-300 text-min font-bold uppercase tracking-widest">
+      SECURITY INTELLIGENCE BY IPI.LI
+    </p>
+  </div>
+
+  <script>
+
+window.addEventListener('DOMContentLoaded', () => {
+try {
+
+const els = {
+      root: document.getElementById('pageRoot'),
+
+      input: document.getElementById('ipInput'),
+      btn: document.getElementById('btnAnalyze'),
+      errBox: document.getElementById('errBox'),
+
+      target: document.getElementById('target_ip'),
+      btnEye: document.getElementById('btnEye'),
+      eyeIcon: document.getElementById('eyeIcon'),
+      btnEyeImg: document.getElementById('btnEyeImg'),
+
+      myipBox: document.getElementById('myipBox'),
+
+      location: document.getElementById('location'),
+      asNum: document.getElementById('as'),
+      asnOwner: document.getElementById('asname'),
+      org: document.getElementById('org'),
+      registry: document.getElementById('registry'),
+
+      ipSourceBox: document.getElementById('ip_source_box'),
+      ipPropertyBox: document.getElementById('ip_property_box'),
+
+      humanBar: document.getElementById('humanBar'),
+      botBar: document.getElementById('botBar'),
+      humanLabel: document.getElementById('humanLabel'),
+      botLabel: document.getElementById('botLabel'),
+      scoreMarker: document.getElementById('scoreMarker'),
+      scoreBadge: document.getElementById('scoreBadge'),
+
+      latVal: document.getElementById('latVal'),
+      lonVal: document.getElementById('lonVal'),
+      mapFrame: document.getElementById('mapFrame'),
+
+      neighborsBox: document.getElementById('neighborsBox'),
+      bgpGraph: document.getElementById('bgpGraph'),
+      bgpFitBtn: document.getElementById('bgpFitBtn'),
+
+      bgpExtLinks: document.getElementById('bgpExtLinks'),
+
+      btnShot: document.getElementById('btnShot'),
+    };
+
+    // ===========================
+    // v13.1 Transactional rendering (anti-flicker + anti-stale)
+    // ===========================
+    let activeQueryId = 0;
+    let activeFetchCtrl = null;
+    // BGP fetch/render control
+    let bgpFetchCtrl = null;
+    let bgpFetchQid = 0;
+    let bgpRenderTimer = null;
+    let bgpFinalizeTimer = null;
+    let bgpDomTimer = null; // guards updateBGP setTimeout to avoid stale renders
+    const renderState = {
+      text: new Map(),
+      html: new Map(),
+      lastMapSrc: "",
+    };
+
+    // ===========================
+    // DOM write helpers (raw vs stable)
+    // - Raw: used for hard resets (Loading/Error)
+    // - Stable: anti-flicker + placeholder protection
+    // ===========================
+
+    function setTextRaw(el, key, value){
+      if(!el) return;
+      const v = safeText(value, '-');
+      const prev = renderState.text.get(key);
+      if(prev === v) return;
+      renderState.text.set(key, v);
+      if(el.textContent !== v) el.textContent = v;
+    }
+    function setHTMLRaw(el, key, value){
+      if(!el) return;
+      const v = (value === undefined || value === null) ? "" : String(value);
+      const prev = renderState.html.get(key);
+      if(prev === v) return;
+      renderState.html.set(key, v);
+      if(el.innerHTML !== v) el.innerHTML = v;
+    }
+
+// ===========================
+// v23.1 Global no-flicker helpers (stable write + placeholder protection)
+// - Use these for normal rendering (NOT for beforeNewQuery resets)
+// ===========================
+function _isPlaceholderVal(v, placeholderValues){
+  const t = String(v ?? "").trim();
+  if(t==="") return true;
+  if(!placeholderValues) return false;
+  for(const p of placeholderValues){
+    if(t === String(p).trim()) return true;
+  }
+  return false;
+}
+function setTextStable(el, key, value, opts={}){
+  if(!el) return;
+  const v = safeText(value, '-');
+  const prev = renderState.text.get(key);
+  if(prev === v) return;
+
+  const placeholderValues = opts.placeholderValues || ["-","Global Registry"];
+  const allowPlaceholderOverwrite = !!opts.allowPlaceholderOverwrite;
+
+  const oldText = (el.textContent || "");
+  const oldIsPlaceholder = _isPlaceholderVal(oldText, placeholderValues);
+  const newIsPlaceholder = _isPlaceholderVal(v, placeholderValues);
+
+  // Do not let placeholder overwrite a real value (prevents "flash back to -")
+  if(!allowPlaceholderOverwrite && !oldIsPlaceholder && newIsPlaceholder) return;
+
+  renderState.text.set(key, v);
+  if(el.textContent !== v) el.textContent = v;
+}
+function setHTMLStable(el, key, value, opts={}){
+  if(!el) return;
+  const v = (value===undefined || value===null) ? "-" : String(value);
+  const prev = renderState.html.get(key);
+  if(prev === v) return;
+
+  const placeholderValues = opts.placeholderValues || ["-","Global Registry","<span class=\"pill pill-gray\">...</span>"];
+  const allowPlaceholderOverwrite = !!opts.allowPlaceholderOverwrite;
+
+  const oldHTML = (el.innerHTML || "");
+  const oldIsPlaceholder = _isPlaceholderVal(oldHTML.replace(/<[^>]+>/g,"").trim(), ["-","Global Registry","..."]);
+  const newIsPlaceholder = _isPlaceholderVal(v.replace(/<[^>]+>/g,"").trim(), ["-","Global Registry","..."]);
+
+  if(!allowPlaceholderOverwrite && !oldIsPlaceholder && newIsPlaceholder) return;
+
+  renderState.html.set(key, v);
+  if(el.innerHTML !== v) el.innerHTML = v;
+}
+
+// ===========================
+// Commit queue: coalesce multiple renders into one frame (global anti-flicker)
+// ===========================
+let __commitRaf = 0;
+let __commitPayload = null;
+
+function scheduleCommit(payload){
+  __commitPayload = payload;
+  if(__commitRaf) return;
+  __commitRaf = requestAnimationFrame(()=>{
+    __commitRaf = 0;
+    const p = __commitPayload;
+    __commitPayload = null;
+    if(!p) return;
+    // stale guard
+    if(p.qid !== activeQueryId) return;
+    try{ commitUI(p); }catch(e){ console.log("commitUI error:", e); }
+  });
+}
+
+function commitUI(p){
+  const data = p.data;
+  const view = p.view;
+  const qid = p.qid;
+  const queryKey = p.queryKey;
+  const input = p.input;
+      // Query target: keep stable (prefer real resolved ip)
+      const ipNow = safeText(data.ip,'-');
+      ipFull = ipNow;
+      ipMasked = maskIP(ipFull);
+      renderIP();
+
+      // Don't flip target back to Loading during polls
+      setTextRaw(els.target, "target", ipNow);
+
+      // Location (flag emoji SVG; avoids Windows older systems rendering flags as letter abbreviations)
+      const cc2 = String(view.country_code||'').trim();
+      const locTextBase = `${safeText(view.country,'-')} ${safeText(view.city,'')}`.trim();
+      const flagSvg = ccToTwemojiFlagSvg(cc2);
+      if(flagSvg){
+        setHTMLStable(els.location, "locationHTML",
+          `<img class="flag-emoji" src="${escapeHTML(flagSvg)}" alt="${escapeHTML(String(cc2||"").toUpperCase())}"> ${escapeHTML(locTextBase)}`,
+          { allowPlaceholderOverwrite: false }
+        );
+      }else{
+        setTextStable(els.location, "locationText", locTextBase, { allowPlaceholderOverwrite: false });
+      }
+
+      // ASN number / owner (prefer longer to avoid bounce)
+      const asnTxt = String(safeText(data.asn,'-'));
+      setTextStable(els.asNum, "asNum", asnTxt, { allowPlaceholderOverwrite: true, placeholderValues: ["-","Loading..."] });
+
+      const asnOwnerText = safeText(view.asn_owner,'-');
+      // ASN domain (sticky: once non-empty, don't disappear during polls)
+      const asnDomainRaw = safeText(view.asn_domain,'').trim();
+      const asnStickyKey = `asnDomainSticky|${queryKey}`;
+      const prevAsnDomain = renderState.text.get(asnStickyKey) || '';
+      const asnDomain = (asnDomainRaw && asnDomainRaw !== '-') ? asnDomainRaw : prevAsnDomain;
+      if(asnDomain && asnDomain !== '-') renderState.text.set(asnStickyKey, asnDomain);
+
+      const asnOwnerKey = asnDomain ? (`${asnOwnerText}|${asnDomain}`) : (`${asnOwnerText}|`);
+      if(renderState.html.get("asnOwnerHTML") !== asnOwnerKey){
+        renderState.html.set("asnOwnerHTML", asnOwnerKey);
+        if(els.asnOwner){
+          if(asnDomain){
+            const href = asnDomain.startsWith('http') ? asnDomain : `https://${asnDomain}`;
+            els.asnOwner.innerHTML = `${escapeHTML(asnOwnerText)} - <a href="${escapeHTML(href)}" target="_blank" rel="noopener">${escapeHTML(asnDomain)}</a>`;
+          }else{
+            els.asnOwner.textContent = asnOwnerText;
+          }
+        }
+
+      }
+
+      // Org + org_domain (sticky: once non-empty, don't disappear during polls)
+      const orgTextRaw = safeText(view.org,'-');
+      const orgDomainRaw = safeText(view.org_domain,'').trim();
+      const orgStickyKey = `orgDomainSticky|${queryKey}`;
+      const prevOrgDomain = renderState.text.get(orgStickyKey) || '';
+      const orgDomain = (orgDomainRaw && orgDomainRaw !== '-') ? orgDomainRaw : prevOrgDomain;
+      if(orgDomain && orgDomain !== '-') renderState.text.set(orgStickyKey, orgDomain);
+      const orgText = (orgTextRaw && orgTextRaw !== '-') ? orgTextRaw : safeText(renderState.text.get(`orgTextSticky|${queryKey}`), '-') ;
+      if(orgText && orgText !== '-') renderState.text.set(`orgTextSticky|${queryKey}`, orgText);
+      const orgKey = orgDomain ? (`${orgText}|${orgDomain}`) : (`${orgText}|`);
+      if(renderState.html.get("orgHTML") !== orgKey){
+        renderState.html.set("orgHTML", orgKey);
+        if(els.org){
+          if(orgDomain){
+            const href = orgDomain.startsWith('http') ? orgDomain : `https://${orgDomain}`;
+            els.org.innerHTML = `${escapeHTML(orgText)} - <a href="${escapeHTML(href)}" target="_blank" rel="noopener">${escapeHTML(orgDomain)}</a>`;
+          }else{
+            els.org.textContent = orgText;
+          }
+        }
+
+      }
+
+      if(els.registry){
+        const reg = safeText(view.registry,'-').trim();
+        const rr = safeText(view.reg_region,'').trim();
+        const txt = (rr && rr !== '-') ? `${reg}/${rr}` : reg;
+        setTextStable(els.registry, "registry", txt || "-", { placeholderValues: ['-'], allowPlaceholderOverwrite: true });
+      }
+
+      // Tags + Risk
+      renderIPTags(view.ip_source, view.ip_property, view.ip_source_reason, view.ip_property_reason, view.ip_property_scores);
+
+      const score = Number(data.risk_score || 0);
+      const human = Number(data.human_percent ?? (100 - score));
+      const bot = Number(data.bot_percent ?? score);
+      updateRiskUI(score, human, bot, data.risk_reason, data.risk_breakdown, data.humanbot_reason, data.humanbot_breakdown, data.risk_confidence, data.humanbot_confidence);
+
+      // Map (guarded inside updateMapUI)
+      updateMapUI(data.lat, data.lon);
+    }
+
+function clearMainTimersAndAbort(){
+      if(activeFetchCtrl){ try{ activeFetchCtrl.abort(); }catch(e){} activeFetchCtrl = null; }
+    }
+    function abortBGP(){
+      // Cancel any in-flight BGP request and timers.
+      if(bgpFetchCtrl){ try{ bgpFetchCtrl.abort(); }catch(e){} bgpFetchCtrl = null; }
+      if(bgpRenderTimer){ try{ clearTimeout(bgpRenderTimer); }catch(e){} bgpRenderTimer = null; }
+      if(bgpFinalizeTimer){ try{ clearTimeout(bgpFinalizeTimer); }catch(e){} bgpFinalizeTimer = null; }
+      if(bgpDomTimer){ try{ clearTimeout(bgpDomTimer); }catch(e){} bgpDomTimer = null; }
+      // Reset state flags so a new query can always restart fetching.
+      bgpLoading = false;
+      bgpLoaded = false;
+
+      // Destroy vis-network instance when switching queries; otherwise clearing
+      // #bgpGraph.innerHTML can detach the canvas and cause blank renders.
+      if(typeof bgpNetwork !== "undefined" && bgpNetwork){
+        try{ bgpNetwork.destroy(); }catch(e){}
+        bgpNetwork = null;
+      }
+    }
+
+    // Small helper: run heavy UI work when browser is idle
+    function runIdle(fn){
+      if('requestIdleCallback' in window){
+        requestIdleCallback(()=>{ try{ fn(); }catch(e){} }, { timeout: 500 });
+      }else{
+        setTimeout(()=>{ try{ fn(); }catch(e){} }, 0);
+      }
+    }
+
+    // ---- state: IP mask ----
+    let ipFull = "";
+    let ipMasked = "";
+    let myipFullHTML = "";
+    let myipMaskedHTML = "";
+    let maskOn = false;
+    // ---- Eye button icons ----
+    const SHOW_ICON = "https://cdn.jsdelivr.net/npm/remixicon@4.9.1/icons/System/eye-off-line.svg";
+    const HIDE_ICON = "https://cdn.jsdelivr.net/npm/remixicon@4.9.1/icons/System/eye-line.svg";
+
+    function setEyeIcon(isHidden){
+      const img = els.btnEyeImg;
+      if(!img) return;
+      img.src = isHidden ? SHOW_ICON : HIDE_ICON;
+    }
+
+    // ---- state: BGP lazy load ----
+    let currentASNNum = 0;
+    let bgpLoaded = false;
+    let bgpLoading = false;
+    let bgpObserver = null;
+    // ---- API base ----
+    // If you open this page via file://, location.origin is "null" and relative fetch("/api/...") will fail.
+    // In that case, fall back to your local backend address.
+    function apiBase(){
+      try{
+        const o = String(location.origin||"");
+        if(o && o !== "null" && /^https?:\/\//i.test(o)) return o;
+      }catch(e){}
+      return "http://127.0.0.1:8080";
+    }
+
+    function parseASNNum(asnStr){
+      const s = String(asnStr||'').trim().toUpperCase();
+      if(!s) return 0;
+      const n = Number(s.replace(/^AS/,''));
+      return Number.isFinite(n) && n>0 ? Math.floor(n) : 0;
+    }
+
+    function escapeHTML(str){
+      return String(str)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#039;');
+    }
+    function safeText(v, fallback='-'){
+      if(v===null || v===undefined) return fallback;
+      const s = String(v).trim();
+      return s ? s : fallback;
+    }
+
+    function ccToTwemojiFlagSvg(cc){
+      if(!cc) return '';
+      const s = String(cc).trim().toUpperCase();
+      if(s.length !== 2) return '';
+      const cps = s.split('').map(ch => (127397 + ch.charCodeAt(0)).toString(16));
+      // Twemoji SVG assets (stable, lightweight). No fallback/proxy.
+      return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${cps.join('-')}.svg`;
+    }
+
+    function clamp(n,a,b){
+      n = Number(n);
+      if(Number.isNaN(n)) return a;
+      return Math.max(a, Math.min(b, n));
+    }
+
+    function showError(msg){
+      els.errBox.textContent = msg;
+      els.errBox.classList.remove('hidden');
+    }
+    function clearError(){
+      els.errBox.classList.add('hidden');
+      els.errBox.textContent = '';
+    }
+
+    function riskLabel(score){
+      score = clamp(score,0,100);
+      if(score < 40) return "低风险";
+      if(score < 50) return "轻度风险";
+      if(score < 70) return "中度风险";
+      return "高风险";
+    }
+
+    function renderIPTags(ipSource, ipProperty, ipSourceReason, ipPropertyReason, ipPropertyScores){
+      const src = safeText(ipSource,'-');
+      const prop = safeText(ipProperty,'-');
+
+      let srcClass = "pill pill-gray";
+      if(src === "广播IP") srcClass = "pill pill-red";
+      else if(src === "原生IP") srcClass = "pill pill-g1";
+
+      let propClass = "pill pill-gray";
+      if(prop === "机房IP") propClass = "pill pill-red";
+      else if(prop === "家庭IP") propClass = "pill pill-g1";
+      else if(prop === "商业IP") propClass = "pill pill-g2";
+
+      const srcTip = ipSourceReason ? ` title="${escapeHTML(ipSourceReason)}"` : "";
+      let propTipTxt = ipPropertyReason || "";
+      if(ipPropertyScores && typeof ipPropertyScores === "object"){
+        const parts = [];
+        for(const k of Object.keys(ipPropertyScores)){
+          parts.push(`${k}:${ipPropertyScores[k]}`);
+        }
+        if(parts.length) propTipTxt = (propTipTxt ? (propTipTxt + "\n") : "") + "score=" + parts.join(", ");
+      }
+      const propTip = propTipTxt ? ` title="${escapeHTML(propTipTxt)}"` : "";
+
+      setHTMLRaw(els.ipSourceBox, 'ipSourceBox', `<span class="${srcClass}"${srcTip}>${escapeHTML(src)}</span>`);
+      setHTMLRaw(els.ipPropertyBox, 'ipPropertyBox', `<span class="${propClass}"${propTip}>${escapeHTML(prop)}</span>`);
+    }
+
+    function updateRiskUI(riskScore, humanPercent, botPercent, riskReason, riskBreakdown, hbReason, hbBreakdown, riskConfidence, hbConfidence){
+      const score = clamp(riskScore,0,100);
+      const human = clamp(humanPercent,0,100);
+      const bot = clamp(botPercent,0,100);
+
+const __riskKey = `${score.toFixed(2)}|${human.toFixed(2)}|${bot.toFixed(2)}|${String(riskReason||"")}|${String(hbReason||"")}|${Number(riskConfidence??0)}|${Number(hbConfidence??0)}`;
+const __prevRiskKey = renderState.text.get("__riskUIKey");
+if(__prevRiskKey === __riskKey) return;
+renderState.text.set("__riskUIKey", __riskKey);
+
+      els.humanBar.style.width = human + "%";
+      els.botBar.style.width = bot + "%";
+      els.humanLabel.textContent = `Human ${human.toFixed(2)}%`;
+      els.botLabel.textContent = `Bot ${bot.toFixed(2)}%`;
+
+      els.scoreMarker.style.left = score + "%";
+
+      const rb = (riskBreakdown && typeof riskBreakdown === "object")
+        ? Object.entries(riskBreakdown).map(([k,v]) => `${k}:${v}`).join(", ")
+        : "";
+      const riskTipTxt = (()=>{
+        const parts = [];
+        if(riskReason) parts.push(String(riskReason));
+        if(rb) parts.push("score=" + rb);
+        const rc = Number(riskConfidence);
+        if(Number.isFinite(rc) && rc > 0) parts.push("confidence=" + rc.toFixed(2));
+        return parts.join("\n");
+      })();
+      els.scoreBadge.title = riskTipTxt;
+
+      els.scoreBadge.textContent = `${score}% ${riskLabel(score)}`;
+    }
+
+    function updateMapUI(latRaw, lonRaw){
+      const lat = Number(latRaw);
+      const lon = Number(lonRaw);
+
+      els.latVal.textContent = Number.isFinite(lat) ? lat.toFixed(2) : '-';
+      els.lonVal.textContent = Number.isFinite(lon) ? lon.toFixed(3) : '-';
+
+      if(Number.isFinite(lat) && Number.isFinite(lon)){
+        // 350KM view (approx): reduce zoom / tiles for faster loading.
+        const radiusKm = 350;
+
+        // 1 degree latitude ~= 111 km
+        const latDelta = radiusKm / 111.0;
+
+        // 1 degree longitude ~= 111*cos(lat) km; protect high latitudes
+        const latRad = lat * Math.PI / 180.0;
+        const cosLat = Math.max(0.25, Math.cos(latRad)); // avoid huge bbox near poles
+        const lonDelta = radiusKm / (111.0 * cosLat);
+
+        const left = lon - lonDelta;
+        const right = lon + lonDelta;
+        const bottom = lat - latDelta;
+        const top = lat + latDelta;
+
+        const bboxRaw = `${left},${bottom},${right},${top}`;
+        const markerRaw = `${lat},${lon}`;
+        const bbox = encodeURIComponent(bboxRaw);
+        const marker = encodeURIComponent(markerRaw);
+        const nextSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`;
+      if(renderState.lastMapSrc !== nextSrc){ renderState.lastMapSrc = nextSrc; els.mapFrame.src = nextSrc; }
+      }else{
+        if(renderState.lastMapSrc !== "about:blank"){ renderState.lastMapSrc = "about:blank"; els.mapFrame.src = "about:blank"; }
+      }
+    }
+
+    // ---- IP masking ----
+    function maskIP(ip){
+      if(!ip) return "";
+      if(ip.includes(".")){
+        const p = ip.split(".");
+        if(p.length === 4){
+          return `${p[0]}.${p[1]}.*.*`;
+        }
+        return ip;
+      }
+      const seg = ip.split(":");
+      if(seg.length >= 3){
+        return `${seg[0]}:${seg[1]}:${seg[2]}:****:****:****:****:****`;
+      }
+      return ip;
+    }
+    function renderIP(){
+      els.target.textContent = maskOn ? ipMasked : ipFull;
+      setEyeIcon(maskOn);
+    }
+
+    function renderMyIP(){
+          if(!els.myipBox) return;
+          if(!myipFullHTML){
+            return; // keep whatever is currently shown
+          }
+          const html = maskOn ? myipMaskedHTML : myipFullHTML;
+          // raw write: myip is always derived from detection; no placeholder-stickiness needed here
+          setHTMLRaw(els.myipBox, 'myipBox', html);
+        }
+    
+    // ---- Screenshot ----
+    async function takeShot(){
+      const prev = maskOn;
+      maskOn = true;
+      renderIP();
+      renderMyIP();
+
+      try{
+        const canvas = await html2canvas(els.root, {
+          backgroundColor: "#f6f8fa",
+          scale: 2,
+          useCORS: true
+        });
+        const link = document.createElement("a");
+        link.download = `purepure-${Date.now()}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }catch(e){
+        showError("截图失败：请刷新后重试");
+      }finally{
+        maskOn = prev;
+        renderIP();
+      }
+    }
+
+    // ✅ My IP（IPv4/IPv6 only / Dual-stack）
+    function withTimeout(ms){
+      const ac = new AbortController();
+      const t = setTimeout(()=>ac.abort(), ms);
+      return { ac, done: ()=>clearTimeout(t) };
+    }
+
+    function isLikelyPublicIP(ip){
+      try{
+        if(!ip) return false;
+        ip = String(ip).trim();
+        // IPv4
+        if(ip.includes(".")){
+          const parts = ip.split(".");
+          if(parts.length !== 4) return false;
+          const a = Number(parts[0]);
+          const b = Number(parts[1]);
+          if(parts.some(x=>x==="" || isNaN(Number(x)) || Number(x)<0 || Number(x)>255)) return false;
+          // loopback / link-local / RFC1918
+          if(a === 10) return false;
+          if(a === 127) return false;
+          if(a === 169 && b === 254) return false;
+          if(a === 192 && b === 168) return false;
+          if(a === 172 && b >= 16 && b <= 31) return false;
+          return true;
+        }
+        // IPv6: exclude loopback, ULA, link-local
+        const low = ip.toLowerCase();
+        if(low === "::1" || low === "::") return false;
+        if(low.startsWith("fe80:") || low.startsWith("fe81:") || low.startsWith("fe8") || low.startsWith("fe9") || low.startsWith("fea") || low.startsWith("feb")) return false;
+        if(low.startsWith("fc") || low.startsWith("fd")) return false; // fc00::/7
+        return true;
+      }catch(e){
+        return false;
+      }
+    }
+
+    async function fetchIpify(url){
+      const { ac, done } = withTimeout(3500);
+      try{
+        const res = await fetch(url, { signal: ac.signal, headers: { 'Accept': 'application/json' }});
+        if(!res.ok) throw new Error("HTTP " + res.status);
+        const j = await res.json();
+        const ip = (j && j.ip) ? String(j.ip).trim() : "";
+        if(!ip) throw new Error("empty");
+        return ip;
+      } finally {
+        done();
+      }
+    }
+
+    async function fetchIPText(url){
+      const { ac, done } = withTimeout(3500);
+      try{
+        const res = await fetch(url, { signal: ac.signal, headers: { 'Accept': 'text/plain' }});
+        if(!res.ok) throw new Error("HTTP " + res.status);
+        const t = (await res.text()).trim();
+        // pick first token that looks like an IP
+        const ip = t.split(/\s+/)[0] || "";
+        if(!ip) throw new Error("empty");
+        return ip;
+      } finally {
+        done();
+      }
+    }
+    // ===========================
+    // Data fetch: detect local/public IP
+    // ===========================
+    async function refreshMyIP(){
+      // 同时探测 v4/v6（浏览器自身网络栈决定是否能访问）
+      // Primary probes: ip.sb (separate v4/v6 endpoints)
+      let v4 = "", v6 = "";
+
+      // IPv4 primary
+      if(!v4){ try { v4 = await fetchIPText("https://api-ipv4.ip.sb/ip"); } catch(e) {} }
+      // IPv4 fallbacks
+      if(!v4){ try { v4 = await fetchIPText("https://ipv4.icanhazip.com"); } catch(e) {} }
+      if(!v4){ try { v4 = await fetchIPText("https://checkip.amazonaws.com/"); } catch(e) {} }
+      if(!v4){ try { v4 = await fetchIPText("https://ifconfig.me/ip"); } catch(e) {} }
+
+      // IPv6 primary
+      if(!v6){ try { v6 = await fetchIPText("https://api-ipv6.ip.sb/ip"); } catch(e) {} }
+      // IPv6 fallbacks
+      if(!v6){ try { v6 = await fetchIPText("https://ipv6.icanhazip.com"); } catch(e) {} }
+      // backup: some endpoints may return v6 if available
+      if(!v6){ try {
+        const t = await fetchIPText("https://icanhazip.com/");
+        if(t && t.includes(":")) v6 = t;
+      } catch(e) {} }
+
+      // Filter non-public (avoid ::1/fc00/fe80 etc causing "no info")
+      if(v4 && !isLikelyPublicIP(v4)) v4 = "";
+      if(v6 && !isLikelyPublicIP(v6)) v6 = "";
+
+      // UI: show which stack(s) we detected
+      if(v4 && v6){
+        myipFullHTML = `<span class="pill pill-blue">Dual Stack</span> <span class="text-gray-500 font-extrabold">${escapeHTML(v4)}</span> <span class="text-gray-300">/</span> <span class="text-gray-500 font-extrabold">${escapeHTML(v6)}</span>`;
+        myipMaskedHTML = `<span class="pill pill-blue">Dual Stack</span> <span class="text-gray-500 font-extrabold">${escapeHTML(maskIP(v4))}</span> <span class="text-gray-300">/</span> <span class="text-gray-500 font-extrabold">${escapeHTML(maskIP(v6))}</span>`;
+        renderMyIP();
+        // Prefer IPv4 for first query (more compatible with some geo/ASN sources)
+        return v4;
+      }
+
+      if(v4){
+        myipFullHTML = `<span class="pill pill-gray">IPv4 only</span> <span class="text-gray-500 font-extrabold">${escapeHTML(v4)}</span>`;
+        myipMaskedHTML = `<span class="pill pill-gray">IPv4 only</span> <span class="text-gray-500 font-extrabold">${escapeHTML(maskIP(v4))}</span>`;
+        renderMyIP();
+        return v4;
+      }
+
+      if(v6){
+        myipFullHTML = `<span class="pill pill-gray">IPv6 only</span> <span class="text-gray-500 font-extrabold">${escapeHTML(v6)}</span>`;
+        myipMaskedHTML = `<span class="pill pill-gray">IPv6 only</span> <span class="text-gray-500 font-extrabold">${escapeHTML(maskIP(v6))}</span>`;
+        renderMyIP();
+        return v6;
+      }
+
+      // none detected here; caller will fallback to backend /api/ip
+      return "";
+    }
+
+    // ✅ BGP 渲染
+    function asnHref(asn){
+      return `https://bgp.he.net/AS${asn}`;
+    }
+    function renderASNList(list){
+      if(!Array.isArray(list) || list.length === 0){
+        return `<div class="text-sm text-gray-400">-</div>`;
+      }
+      return list.slice(0,6).map(x=>{
+        const a = Number(x.asn || 0);
+        const name = safeText(x.name,'');
+        const cc = safeText(x.country_code,'');
+        const label = `AS${a}` + (name ? ` · ${name}` : '') + (cc ? ` · ${cc}` : '');
+        return `<div class="truncate"><a class="bgp-link" href="${asnHref(a)}" target="_blank" rel="noreferrer">${escapeHTML(label)}</a></div>`;
+      }).join("");
+    }
+
+    // ---- BGP graph (he.net-style) ----
+    let bgpNetwork = null;
+
+    function buildBGPVisData(bgp){
+      const asn = Number(bgp.asn || 0);
+      const name = safeText(bgp.name,'');
+      const upstreams = Array.isArray(bgp.upstreams) ? bgp.upstreams : [];
+
+      const nodes = [];
+      const edges = [];
+
+      // center (query ASN)
+      nodes.push({
+        id: asn,
+        label: `AS${asn}`,
+        title: `${`AS${asn}`}${name ? " · " + escapeHTML(name) : ""}`,
+        group: "self",
+      });
+
+      const seen = new Set([asn]);
+
+      (upstreams||[]).forEach(u => {
+        const id = Number(u.asn || 0);
+        if(!id || seen.has(id)) return;
+        seen.add(id);
+
+        const label = `AS${id}`;
+        const title = `${label}${u.name ? " · " + escapeHTML(u.name) : ""}`;
+        const group = u.is_tier1 ? "tier1" : "nontier1";
+
+        nodes.push({ id, label, title, group });
+        edges.push({ from: asn, to: id, group });
+      });
+
+      return { nodes, edges, counts: { upstreams: upstreams.length } };
+    }
+
+function renderBGPGraph(bgp){
+      if(!(window.vis && window.vis.Network)){
+        if(window.__ensureVisNetwork){
+          window.__ensureVisNetwork().then(function(){
+            if(window.vis && window.vis.Network){ try{ renderBGPGraph(bgp); }catch(e){} }
+          });
+        }
+        setBGPPlaceholder("BGP 图形库加载中…");
+        return;
+      }
+
+      const container = document.getElementById('bgpGraph');
+      if(!container || typeof vis === "undefined" || !vis.Network) return;
+
+      const { nodes, edges } = buildBGPVisData(bgp);
+
+      const data = {
+        nodes: new vis.DataSet(nodes),
+        edges: new vis.DataSet(edges.map(e => ({ ...e, smooth: { type: 'continuous' } }))),
+      };
+
+      const BGP_COLORS = {
+        tier1: "#f97316",      // orange-500
+        tier1Border: "#ea580c",
+        nontier1: "#3b82f6",   // blue-500
+        nontier1Border: "#2563eb",
+        self: "#111827",
+        selfBorder: "#111827",
+      };
+
+      // Sync legend dot colors (CSS variables)
+      document.documentElement.style.setProperty("--bgp-tier1", BGP_COLORS.tier1);
+      document.documentElement.style.setProperty("--bgp-nontier1", BGP_COLORS.nontier1);
+
+      const options = {
+        autoResize: true,
+        interaction: { hover: true, tooltipDelay: 120, hideEdgesOnDrag: true },
+        physics: {
+          enabled: true,
+          solver: "forceAtlas2Based",
+          forceAtlas2Based: { gravitationalConstant: -36, centralGravity: 0.012, springLength: 130, springConstant: 0.05, damping: 0.65, avoidOverlap: 0.6 },
+          stabilization: { enabled: true, iterations: 220, updateInterval: 30 }
+        },
+        nodes: { shape: "dot", borderWidth: 2, font: { size: 12, face: "ui-sans-serif" } },
+        edges: { width: 2, color: { opacity: 0.8 } },
+        groups: {
+          self: { color: { background: BGP_COLORS.self, border: BGP_COLORS.selfBorder }, size: 28, font: { color: BGP_COLORS.self, size: 14, bold: true } },
+          tier1: { color: { background: BGP_COLORS.tier1, border: BGP_COLORS.tier1Border }, size: 18 },
+          nontier1: { color: { background: BGP_COLORS.nontier1, border: BGP_COLORS.nontier1Border }, size: 18 },
+        }
+      };
+const containerDetached = (container.childElementCount === 0);
+      if(!bgpNetwork || containerDetached){
+        if(bgpNetwork){ try{ bgpNetwork.destroy(); }catch(e){} bgpNetwork = null; }
+        bgpNetwork = new vis.Network(container, data, options);
+      }else{
+        try{ bgpNetwork.setData(data); }catch(e){
+          try{ bgpNetwork.destroy(); }catch(e2){}
+          bgpNetwork = new vis.Network(container, data, options);
+        }
+      }
+
+      // Force a redraw on next frame (helps with intermittent blank on some browsers)
+      try{ requestAnimationFrame(()=>{ try{ bgpNetwork && bgpNetwork.redraw(); }catch(e){} }); }catch(e){}
+
+      bgpNetwork.once("stabilizationIterationsDone", () => {
+        try { bgpNetwork.fit({ animation: { duration: 500, easingFunction: "easeInOutQuad" } }); } catch(e){}
+      });
+
+      // click -> open bgp.he.net
+      bgpNetwork.on("doubleClick", (params) => {
+        if(params && params.nodes && params.nodes.length){
+          const id = params.nodes[0];
+          const sid = String(id||"");
+          // Only open for real ASNs (numeric ids). Placeholder ids (e.g. "u_removed") should do nothing.
+          if(/^\d+$/.test(sid)){
+            window.open(`https://bgp.he.net/AS${sid}#_graph4`, "_blank", "noreferrer");
+          }
+        }
+      });
+    }
+
+    // ===========================
+    // BGP: fetch + render
+    // ===========================
+    function updateBGP(bgp){
+      // 当没有 BGP 数据时：保留模块布局，仅在图区域显示占位
+      if(!bgp || !bgp.asn){
+        if(bgpNetwork){ try{ bgpNetwork.destroy(); }catch(e){} }
+        bgpNetwork = null;
+        if(els.bgpGraph){
+          setHTMLRaw(els.bgpGraph, 'bgpGraph', `<div class="h-full w-full flex items-center justify-center text-sm text-gray-400">暂无 BGP 拓扑数据</div>`);
+        }
+        if(els.bgpExtLinks) setHTMLRaw(els.bgpExtLinks, 'bgpExtLinks', '');
+        return;
+      }
+
+      // Ensure the placeholder doesn't get stuck if vis-network failed to load (CDN blocked, etc.)
+      if(typeof vis === "undefined" || !vis || !vis.Network){
+        setBGPPlaceholder('vis-network 图形库未加载（可能被网络拦截）。可点击“加载拓扑/重试”再试，或改用本地静态文件。', { retry: true, small: true });
+        // still continue to render external links/list; just skip graph rendering later
+      }else{
+        // clear placeholder before heavy render
+        if(bgpNetwork){ try{ bgpNetwork.destroy(); }catch(e){} bgpNetwork = null; }
+        if(els.bgpGraph) setHTMLRaw(els.bgpGraph, 'bgpGraph', '');
+      }
+
+      const asn = Number(bgp.asn || 0);
+      const name = safeText(bgp.name,'');
+      const prefix = safeText(bgp.prefix,'-');
+      const source = safeText(bgp.source,'RIPEstat');
+
+      const upN = (bgp.upstreams||[]).length;
+      // 保留模块内部布局（静态 HTML），这里只更新图与按钮绑定
+      // 外部查看链接：固定按 ASN 输出（成功/失败一致）
+      bgpStatusText = "";
+      renderBGPExtLinks(asn);
+
+      // render after DOM mount
+      if(bgpDomTimer){ try{ clearTimeout(bgpDomTimer); }catch(e){} }
+      const qid = activeQueryId;
+      bgpDomTimer = setTimeout(() => {
+        if(qid !== activeQueryId) return;
+        renderBGPGraph(bgp);
+
+        const fitBtn = document.getElementById('bgpFitBtn');
+        if(fitBtn) fitBtn.onclick = () => { try{ bgpNetwork && bgpNetwork.fit({ animation: { duration: 400 } }); }catch(e){} };
+
+      }, 0);
+    }
+
+    
+    // ---- BGP external links + silent retry (simple, keep old graph) ----
+    let bgpRetryTimer = null;
+    let bgpRetryAttempt = 0;
+    let bgpRetryQid = 0;
+    let bgpStatusText = ""; // e.g. "正在加载…" / "正在重试…"
+
+    function buildBGPExtLinksHTML(asnNum){
+      const asn = Number(asnNum || 0);
+      if(!asn) return '';
+      const tools = `https://bgp.tools/as/${asn}#connectivity`;
+      const he = `https://bgp.he.net/AS${asn}#_graph4`;
+      const status = bgpStatusText ? `<span class="text-gray-400 mr-2">${escapeHTML(bgpStatusText)}</span>` : '';
+      return `${status}<a class="bgp-link" href="${tools}" target="_blank" rel="noopener">bgp.tools</a> <span class="text-gray-300 mx-1">|</span> <a class="bgp-link" href="${he}" target="_blank" rel="noopener">bgp.he.net</a>`;
+    }
+
+    function renderBGPExtLinks(asnNum){
+      const ext = els.bgpExtLinks;
+      if(!ext) return;
+      setHTMLRaw(ext, 'bgpExtLinks', buildBGPExtLinksHTML(asnNum));
+    }
+
+    function clearBGPRetry(){
+      bgpRetryAttempt = 0;
+      if(bgpRetryTimer){ try{ clearTimeout(bgpRetryTimer); }catch(e){} bgpRetryTimer = null; }
+      bgpRetryQid = 0;
+    }
+
+    function scheduleBGPRetry(asnNum, qid){
+      // Only retry for the latest active query id
+      bgpRetryQid = qid;
+      if(bgpRetryTimer){ try{ clearTimeout(bgpRetryTimer); }catch(e){} bgpRetryTimer = null; }
+
+      const attempt = Math.min(6, bgpRetryAttempt);
+      const base = Math.min(20000, 1500 * Math.pow(2, attempt)); // 1500,3000,6000,12000,20000...
+      const jitter = base * (0.8 + 0.4*Math.random());
+      bgpRetryAttempt = attempt + 1;
+
+      bgpRetryTimer = setTimeout(()=>{
+        // Stale?
+        if(qid !== activeQueryId || bgpFetchQid !== qid || bgpRetryQid !== qid) return;
+        // Try again (silent)
+        try{
+          // reuse the same limit
+          scheduleBGPFetch(asnNum, qid);
+        }catch(e){}
+      }, jitter);
+    }
+
+function setBGPPlaceholder(text, opts={}){
+      const loading = !!opts.loading;
+      const small = !!opts.small;
+
+      if(els.bgpGraph){
+        const spinner = loading ? `<span class="inline-block w-3 h-3 mr-2 rounded-full border border-gray-300 border-t-gray-500 animate-spin"></span>` : '';
+        setHTMLRaw(els.bgpGraph, 'bgpGraph',
+          `<div class="h-full w-full flex items-center justify-center ${small?'text-xs':'text-sm'} text-gray-400 px-3 text-center">${spinner}${escapeHTML(text)}</div>`
+        );
+      }
+    }
+
+    function resetBGPLazyState(asnNum){
+      // reset UI state; also destroy old network to avoid blank canvas reuse
+      if(bgpNetwork){ try{ bgpNetwork.destroy(); }catch(e){} bgpNetwork = null; }
+      currentASNNum = asnNum || 0;
+      bgpLoaded = false;
+      bgpLoading = false;
+      if(!currentASNNum){
+        setBGPPlaceholder('无 ASN，无法加载 BGP 拓扑');
+      }else{
+        setBGPPlaceholder('BGP 拓扑将按需加载（滚动到该区域）');
+      }
+    }
+
+    // ===========================
+    // Data fetch: main /api/ip request + transactional commit
+    // ===========================
+    async function fetchData(input=""){
+      clearError();
+
+      const raw = (input && input.trim()) ? input.trim() : "";
+      const queryKey = raw ? raw : "__myip__";
+      // New query transaction
+      const qid = (++activeQueryId);
+      // Cancel previous work when starting a new query
+        clearMainTimersAndAbort();
+        abortBGP();
+        // Reset stable + clear late fields on NEW query
+        // Only show Loading on NEW query to avoid flicker
+        setTextRaw(els.target, "target", "Loading...");
+
+      // Build URL
+      let apiUrl = apiBase() + "/api/ip";
+      if(raw){
+        apiUrl = `${apiBase()}/api/ip?=${encodeURIComponent(raw)}`;
+      }
+
+      // Abort previous fetch for this transaction, create new
+      if(activeFetchCtrl){ try{ activeFetchCtrl.abort(); }catch(e){} }
+      const ctrl = new AbortController();
+      activeFetchCtrl = ctrl;
+
+      let timeout = null;
+      try{
+        timeout = setTimeout(()=>{ try{ ctrl.abort(); }catch(e){} }, 45000);
+        const res = await fetch(apiUrl, { headers: { 'Accept': 'application/json' }, signal: ctrl.signal });
+        if(timeout) { try{ clearTimeout(timeout); }catch(e){} timeout = null; }
+
+        // If this response is stale, ignore
+        if(qid !== activeQueryId) return;
+
+        const payload = await res.json();
+        const ok = (typeof payload.ok === "boolean") ? payload.ok : true;
+        const data = payload.data ? payload.data : payload;
+        const errors = Array.isArray(payload.errors) ? payload.errors : [];
+
+        const coreEmpty = (!String(data.country||"").trim() && !String(data.country_code||"").trim() && !String(data.city||"").trim() && !String(data.isp||"").trim() && !String(data.asn||"").trim() && !String(data.asn_owner||"").trim() && !String(data.org||"").trim());
+
+        if(!res.ok || ok === false){
+          showError(errors.length ? errors.join("；") : `请求失败：HTTP ${res.status}`);
+        }else{
+          if(errors.length){
+            console.log("backend errors:", errors);
+            // If core fields are empty, surface upstream errors on the page (otherwise users see a blank UI).
+            if(coreEmpty){
+              showError("上游查询失败：" + errors.join("；"));
+            }
+          }
+        }
+
+        const view = data;
+
+        // ---------------------------
+        // Commit UI (only updates when values actually change)
+        // ---------------------------
+
+        // Commit UI is coalesced via rAF (global no-flicker)
+        scheduleCommit({ data, view, qid, queryKey, input });
+
+        // ---------------------------
+        // BGP: staged + cancellable (no lazy observer blocking)
+        // ---------------------------
+        const asnNum = parseASNNum(data.asn);
+
+        // On new query: reset BGP module immediately to avoid showing previous graph
+        resetBGPLazyState(asnNum);
+
+        if(asnNum){
+          setBGPPlaceholder('等待 BGP 数据…', { small: true });
+          scheduleBGPFetch(asnNum, qid);
+        }else{
+          setBGPPlaceholder('无可用拓扑');
+        }
+}catch(e){
+        if(timeout) { try{ clearTimeout(timeout); }catch(_){} }
+        // Ignore abort due to new query
+        if(qid !== activeQueryId) return;
+
+        if(e && (e.name === 'AbortError')){
+          showError('请求超时，请稍后重试');
+        }else{
+          showError((e && e.name==="AbortError") ? "请求超时：后端仍在计算（可稍后重试，或开启 debug=1 看具体超时源）" : "网络异常或服务未启动");
+        }
+        setTextRaw(els.target, "target", "查询出错");
+        updateMapUI(null, null);
+        abortBGP();
+        resetBGPLazyState(0);
+      }
+    }
+
+    function scheduleBGPFetch(asnNum, qid){
+      if(!asnNum || asnNum<=0){
+        setBGPPlaceholder('无 ASN，无法加载 BGP 拓扑');
+        return;
+      }
+
+      // cancel previous BGP fetch for this query
+      abortBGP();
+      bgpFetchQid = qid;
+      currentASNNum = asnNum;
+
+      
+      // Always show external links (fixed by ASN)
+      // Only reset retry state when this is a brand-new query (not an internal retry)
+      if(bgpRetryQid !== qid) clearBGPRetry();
+      bgpStatusText = "正在加载…";
+      renderBGPExtLinks(asnNum);
+const limit = 80; // keep bounded; backend also clamps 1..300
+      bgpLoading = true;
+
+      const loadingHint = '正在加载 BGP 拓扑…';
+
+      // If we already have a rendered graph, keep it and only show status text.
+      if(!bgpLoaded){
+        setBGPPlaceholder(loadingHint, { loading: true, small: true });
+      }else{
+        bgpStatusText = '正在加载…';
+        renderBGPExtLinks(asnNum);
+      }
+
+      bgpFetchCtrl = new AbortController();
+      const timeoutMs = 25000;
+      const t = setTimeout(()=>{ try{ bgpFetchCtrl.abort(); }catch(e){} }, timeoutMs);
+
+      const base = apiBase();
+      const url = `${base}/api/bgp?asn=${encodeURIComponent(asnNum)}&limit=${encodeURIComponent(limit)}`;
+
+      fetch(url, { signal: bgpFetchCtrl.signal, headers: { 'Accept':'application/json' } })
+        .then(async (res)=>{
+          const payload = await res.json().catch(()=> ({}));
+
+          // stale?
+          if(qid !== activeQueryId || bgpFetchQid !== qid) return;
+
+          const ok = (typeof payload.ok === "boolean") ? payload.ok : res.ok;
+          const data = (payload && payload.data) ? payload.data : null;
+
+          const hasTopo = !!(data && Array.isArray(data.upstreams) && data.upstreams.length > 0);
+
+          if(!res.ok || ok === false){
+  // Prefer rendering if usable topology exists
+  if(hasTopo){
+    bgpStatusText = "";
+    renderBGPExtLinks(asnNum);
+    updateBGP(data);
+    bgpLoaded = true;
+    clearBGPRetry();
+    return;
+  }
+  // Silent retry; keep old graph if exists
+  bgpStatusText = "正在重试…";
+  renderBGPExtLinks(asnNum);
+  if(!bgpLoaded){
+    setBGPPlaceholder('BGP 正在重试…', { loading: true, small: true });
+  }
+  scheduleBGPRetry(asnNum, qid);
+  return;
+}
+
+          if(hasTopo){
+            bgpStatusText = "";
+            renderBGPExtLinks(asnNum);
+            updateBGP(data);
+            bgpLoaded = true;
+            clearBGPRetry();
+          }else{
+            bgpStatusText = '';
+            renderBGPExtLinks(asnNum);
+            setBGPPlaceholder('暂无 BGP 拓扑数据（源站返回为空）', { small: true });
+          }
+        })
+        .catch((err)=>{
+          if(bgpFetchCtrl && bgpFetchCtrl.signal && bgpFetchCtrl.signal.aborted) return;
+          if(qid !== activeQueryId || bgpFetchQid !== qid) return;
+          bgpStatusText = "正在重试…";
+          renderBGPExtLinks(asnNum);
+          if(!bgpLoaded){
+            setBGPPlaceholder('BGP 正在重试…', { loading: true, small: true });
+          }
+          scheduleBGPRetry(asnNum, qid);
+        })
+        .finally(()=>{
+          clearTimeout(t);
+          if(qid !== activeQueryId || bgpFetchQid !== qid) return;
+          bgpLoading = false;
+        });
+    }
+
+function finalizeBGPLayout(qid){
+      if(qid !== activeQueryId) return;
+      if(!bgpNetwork) return;
+      // Gentle finalize: small stabilize then fit
+      try{ bgpNetwork.stabilize(120); }catch(e){}
+      try{ bgpNetwork.fit({ animation: { duration: 250, easingFunction: "easeInOutQuad" } }); }catch(e){}
+    }
+
+    function searchIP(){ fetchData(els.input.value); }
+
+    // events
+    els.btn.addEventListener('click', searchIP);
+    els.input.addEventListener('keypress', (e)=>{ if(e.key==='Enter') searchIP(); });
+
+    els.btnEye.addEventListener('click', ()=>{
+      maskOn = !maskOn;
+      renderIP();
+      renderMyIP();
+    });
+
+    els.btnShot.addEventListener('click', takeShot);
+
+    // init
+    (async ()=>{
+      const ip = await refreshMyIP();
+      // Use detected public IP for the first query (avoid localhost 127.0.0.1/::1 blank fields)
+      fetchData(ip || "");
+    })();
+
+    // ✅ init My IP + 定时刷新（可选：每 60s）
+    setInterval(refreshMyIP, 60000);
+
+} catch (e) {
+  console.error('Fatal init error:', e);
+  try {
+    const eb = document.getElementById('errBox');
+    if(eb){ eb.textContent = '前端初始化失败：' + (e && e.message ? e.message : String(e)); eb.classList.remove('hidden'); }
+  } catch(_) {}
+}
+});
+</script>
+  </body>
+</html>
