@@ -8,6 +8,7 @@ from app.services.ip_lookup import (
     IPLookupProvider,
     IPLookupResponse,
     IPLookupUnavailable,
+    enrich_ip_intelligence,
     get_ip_lookup_provider,
 )
 from app.services.local_ip import local_ip_info
@@ -88,6 +89,7 @@ def lookup_ip(
         )
 
     if local_result := local_ip_info(target_ip):
+        local_result = enrich_ip_intelligence(local_result)
         _ip_lookup_cache.set(target_ip, local_result)
         return _with_resolution_metadata(
             local_result,
@@ -105,6 +107,7 @@ def lookup_ip(
             detail="IP lookup providers are temporarily unavailable",
         ) from exc
 
+    result = enrich_ip_intelligence(result)
     _ip_lookup_cache.set(target_ip, result)
     return _with_resolution_metadata(
         result,

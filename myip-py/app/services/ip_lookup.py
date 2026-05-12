@@ -18,6 +18,17 @@ class IPInfo(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     provider: str
+    network_type: str | None = None
+    ip_property: str | None = None
+    risk_score: int | None = None
+    risk_breakdown: dict[str, int] | None = None
+    human_percent: float | None = None
+    bot_percent: float | None = None
+    is_proxy: bool = False
+    is_vpn: bool = False
+    is_tor: bool = False
+    is_mobile: bool = False
+    is_hosting: bool = False
 
 
 class IPLookupResponse(IPInfo):
@@ -33,7 +44,7 @@ class IPLookupProvider(Protocol):
 
 
 IP_LOOKUP_TIMEOUT_SECONDS = 8.0
-IP_API_FIELDS = "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"
+IP_API_FIELDS = "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as,mobile,proxy,hosting"
 
 
 class IPLookupUnavailable(RuntimeError):
@@ -135,6 +146,11 @@ class IPAPIIsLookupProvider:
                 data.get("lon"),
             ),
             provider=self.provider_name,
+            network_type=_first_string(_string(company, "type"), _string(asn, "type")),
+            is_proxy=_bool_any(data, "is_proxy", "proxy") or _bool_any(_mapping(data, "security"), "is_proxy", "proxy") or _bool_any(_mapping(data, "privacy"), "is_proxy", "proxy"),
+            is_vpn=_bool_any(data, "is_vpn", "vpn") or _bool_any(_mapping(data, "security"), "is_vpn", "vpn") or _bool_any(_mapping(data, "privacy"), "is_vpn", "vpn"),
+            is_tor=_bool_any(data, "is_tor", "tor") or _bool_any(_mapping(data, "security"), "is_tor", "tor") or _bool_any(_mapping(data, "privacy"), "is_tor", "tor"),
+            is_hosting=_bool_any(data, "is_hosting", "hosting") or _bool_any(_mapping(data, "security"), "is_hosting", "hosting") or _bool_any(_mapping(data, "privacy"), "is_hosting", "hosting"),
         )
 
     def _lookup_ipwho(self, ip: str) -> IPInfo:
@@ -144,6 +160,7 @@ class IPAPIIsLookupProvider:
         provider_ip = _matching_ip(data, "ip", ip, "ipwho.is")
 
         connection = _mapping(data, "connection")
+        security = _mapping(data, "security")
         return IPInfo(
             ip=provider_ip,
             country=_string(data, "country") or None,
@@ -155,6 +172,10 @@ class IPAPIIsLookupProvider:
             latitude=_first_float(data.get("latitude"), data.get("lat")),
             longitude=_first_float(data.get("longitude"), data.get("lon")),
             provider="ipwho.is",
+            is_proxy=_bool_any(security, "proxy", "is_proxy"),
+            is_vpn=_bool_any(security, "vpn", "is_vpn"),
+            is_tor=_bool_any(security, "tor", "is_tor"),
+            is_hosting=_bool_any(security, "hosting", "is_hosting"),
         )
 
     def _lookup_ip_api_com(self, ip: str) -> IPInfo:
@@ -178,6 +199,9 @@ class IPAPIIsLookupProvider:
             latitude=_first_float(data.get("lat")),
             longitude=_first_float(data.get("lon")),
             provider="ip-api.com",
+            is_proxy=bool(data.get("proxy")),
+            is_mobile=bool(data.get("mobile")),
+            is_hosting=bool(data.get("hosting")),
         )
 
     def _lookup_ipapi_org(self, ip: str) -> IPInfo:
@@ -231,6 +255,7 @@ class IPAPIIsLookupProvider:
             raise ValueError(_string(data, "message"))
         provider_ip = _matching_ip(data, "ip", ip, "ipdata.co")
         asn = _mapping(data, "asn")
+        threat = _mapping(data, "threat")
         return IPInfo(
             ip=provider_ip,
             country=_first_string(_string(data, "country_name"), _string(data, "country")),
@@ -242,12 +267,18 @@ class IPAPIIsLookupProvider:
             latitude=_first_float(data.get("latitude"), data.get("lat")),
             longitude=_first_float(data.get("longitude"), data.get("lon")),
             provider="ipdata.co",
+            is_proxy=_bool_any(threat, "is_proxy", "is_anonymous", "is_icloud") or _bool_any(data, "is_proxy", "is_anonymous", "is_icloud"),
+            is_tor=_bool_any(threat, "is_tor") or _bool_any(data, "is_tor"),
         )
 
 
 def _mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
     value = data.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def _bool_any(data: dict[str, Any], *keys: str) -> bool:
+    return any(data.get(key) is True for key in keys)
 
 
 def _string(data: dict[str, Any], key: str) -> str:
@@ -312,3 +343,106 @@ def _parse_loc(value: str) -> tuple[float | None, float | None]:
 
 def get_ip_lookup_provider() -> IPLookupProvider:
     return IPAPIIsLookupProvider()
+
+
+def enrich_ip_intelligence(info: IPInfo) -> IPInfo:
+    data = info.model_copy(deep=True)
+    property_scores = _property_scores(data)
+    data.ip_property = _best_property(property_scores)
+    data.risk_breakdown = _risk_breakdown(data)
+    data.risk_score = _clamp(sum(data.risk_breakdown.values()), 0, 100)
+    bot_score = _clamp(_bot_score(data), 0, 100)
+    data.bot_percent = float(bot_score)
+    data.human_percent = float(100 - bot_score)
+    return data
+
+
+def _property_scores(info: IPInfo) -> dict[str, int]:
+    scores = {"机房IP": 0, "家庭IP": 0, "商业IP": 0}
+    network_type = (info.network_type or "").lower()
+    blob = " ".join(value for value in (info.isp, info.network_type) if value).lower()
+
+    if info.is_hosting:
+        scores["机房IP"] += 75
+    if info.is_tor:
+        scores["机房IP"] += 60
+    if info.is_proxy:
+        scores["机房IP"] += 35
+    if info.is_vpn:
+        scores["机房IP"] += 35
+    if info.is_mobile:
+        scores["家庭IP"] += 60 if scores["机房IP"] < 70 else 10
+
+    if any(word in network_type for word in ("business", "enterprise")):
+        scores["商业IP"] += 30
+    if any(word in network_type for word in ("residential", "consumer", "home")):
+        scores["家庭IP"] += 25
+    if any(word in network_type for word in ("hosting", "datacenter", "data center", "cloud")):
+        scores["机房IP"] += 35
+
+    if _contains_any(blob, ("hosting", "datacenter", "data center", "cloud", "vps", "server", "colo")):
+        scores["机房IP"] += 8
+    if scores["机房IP"] < 60 and _contains_any(blob, ("telecom", "broadband", "mobile", "fiber", "cable", "dsl", "isp")):
+        scores["家庭IP"] += 12
+    if _contains_any(blob, ("inc", "llc", "ltd", "corp", "enterprise")):
+        scores["商业IP"] += 6
+    if all(value == 0 for value in scores.values()):
+        scores["家庭IP"] = 3
+    return scores
+
+
+def _best_property(scores: dict[str, int]) -> str:
+    best = "家庭IP"
+    if scores["商业IP"] > scores[best]:
+        best = "商业IP"
+    if scores["机房IP"] >= scores[best] and scores["机房IP"] > 0:
+        best = "机房IP"
+    return best
+
+
+def _risk_breakdown(info: IPInfo) -> dict[str, int]:
+    breakdown = {"base": 10}
+    if info.is_tor:
+        breakdown["tor"] = 30
+    if info.is_proxy:
+        breakdown["proxy"] = 20
+    if info.is_vpn:
+        breakdown["vpn"] = 16
+    if info.is_hosting:
+        breakdown["hosting"] = 14
+    if info.ip_property == "机房IP":
+        breakdown["datacenter"] = 10
+    if _contains_any(" ".join(value for value in (info.isp, info.network_type) if value).lower(), ("cloud", "hosting", "vps", "server", "cdn")):
+        breakdown["cloud_hint"] = 6
+    if info.is_mobile and not any(key in breakdown for key in ("tor", "proxy", "vpn", "hosting")):
+        breakdown["mobile"] = -8
+    return breakdown
+
+
+def _bot_score(info: IPInfo) -> int:
+    score = 10
+    if info.is_tor:
+        score += 45
+    if info.is_proxy:
+        score += 30
+    if info.is_vpn:
+        score += 22
+    if info.is_hosting:
+        score += 18
+    if info.ip_property == "机房IP":
+        score += 10
+    elif info.ip_property == "商业IP":
+        score += 7
+    elif info.ip_property == "家庭IP":
+        score -= 8
+    if info.is_mobile:
+        score -= 12
+    return score
+
+
+def _contains_any(value: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in value for needle in needles)
+
+
+def _clamp(value: int, low: int, high: int) -> int:
+    return max(low, min(high, value))
