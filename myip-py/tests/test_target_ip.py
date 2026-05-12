@@ -4,10 +4,10 @@ import httpx
 import pytest
 from fastapi.exceptions import RequestValidationError
 
-import app.services.target_ip as target_ip
 from app.services.target_ip import (
     DNSResolutionError,
     normalize_ip_or_resolve_domain,
+    resolve_domain,
     resolve_target,
     target_ip_from_query,
     unique_socket_ips,
@@ -136,6 +136,35 @@ def test_target_ip_from_query_returns_selected_ip_for_domain(monkeypatch):
     assert target_ip_from_query("example.com", "203.0.113.9") == "93.184.216.34"
 
 
+def test_target_resolution_uses_configured_doh_timeout_and_provider_order(monkeypatch):
+    calls: list[tuple[str, float]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}]}
+
+    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        raise socket.timeout()
+
+    def fake_get(url: str, *, params: dict[str, str], headers: dict[str, str], timeout: float) -> FakeResponse:
+        calls.append((url, timeout))
+        return FakeResponse()
+
+    monkeypatch.setenv("MYIP_DOH_TIMEOUT_SECONDS", "1.5")
+    monkeypatch.setenv("MYIP_DOH_PROVIDERS", "google,cloudflare")
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    resolution = resolve_domain("example.com")
+
+    assert resolution.selected_ip == "93.184.216.34"
+    assert resolution.dns_provider == "google"
+    assert calls == [("https://dns.google/resolve", 1.5)]
+
+
 def test_invalid_domain_input_is_422_without_dns_lookup(monkeypatch):
     def fail_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
         raise AssertionError("DNS should not be called for malformed input")
@@ -148,7 +177,7 @@ def test_invalid_domain_input_is_422_without_dns_lookup(monkeypatch):
 
 def test_dns_name_not_found_is_422(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *, type=0: (_ for _ in ()).throw(socket.gaierror()))
-    monkeypatch.setattr(target_ip, "DOH_PROVIDERS", [])
+    monkeypatch.setenv("MYIP_DOH_PROVIDERS", "")
 
     with pytest.raises(RequestValidationError) as exc_info:
         normalize_ip_or_resolve_domain("missing.example")
@@ -158,7 +187,7 @@ def test_dns_name_not_found_is_422(monkeypatch):
 
 def test_dns_resolver_failure_raises_dns_resolution_error(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *, type=0: (_ for _ in ()).throw(socket.timeout()))
-    monkeypatch.setattr(target_ip, "DOH_PROVIDERS", [("cloudflare", "https://cloudflare-dns.com/dns-query")])
+    monkeypatch.setenv("MYIP_DOH_PROVIDERS", "cloudflare")
 
     def fail_get(*args: object, **kwargs: object) -> object:
         raise httpx.ConnectError("DoH unavailable")

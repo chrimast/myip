@@ -4,6 +4,8 @@ from urllib.parse import quote
 import httpx
 from pydantic import BaseModel
 
+from app.core.config import get_settings
+
 
 class IPInfo(BaseModel):
     ip: str
@@ -16,6 +18,14 @@ class IPInfo(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     provider: str
+
+
+class IPLookupResponse(IPInfo):
+    input: str | None = None
+    resolved_ip: str | None = None
+    resolved_ips: list[str] | None = None
+    dns_provider: str | None = None
+    geo_provider: str | None = None
 
 
 class IPLookupProvider(Protocol):
@@ -42,6 +52,9 @@ class IPAPIIsLookupProvider:
     provider_name = "ipapi.is"
     endpoint = "https://api.ipapi.is"
 
+    def __init__(self) -> None:
+        self.settings = get_settings()
+
     def lookup(self, ip: str) -> IPInfo:
         last_error: Exception | None = None
         for lookup in (
@@ -65,12 +78,27 @@ class IPAPIIsLookupProvider:
         *,
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        response = httpx.get(url, params=params, timeout=IP_LOOKUP_TIMEOUT_SECONDS)
+        response = httpx.get(url, params=params, timeout=self.settings.myip_provider_timeout_seconds)
         response.raise_for_status()
         return response.json()
 
+    def _params_with_optional_key(
+        self,
+        params: dict[str, str] | None,
+        key_name: str,
+        key_value: str,
+    ) -> dict[str, str] | None:
+        if not key_value:
+            return params
+        merged = dict(params or {})
+        merged[key_name] = key_value
+        return merged
+
     def _lookup_ipapi_is(self, ip: str) -> IPInfo:
-        data = self._get_json(self.endpoint, params={"q": ip})
+        data = self._get_json(
+            self.endpoint,
+            params=self._params_with_optional_key({"q": ip}, "key", self.settings.ipapi_is_key),
+        )
         if error := _string(data, "error"):
             raise ValueError(error)
         provider_ip = _matching_ip(data, "ip", ip, "ipapi.is")
@@ -153,7 +181,10 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipapi_org(self, ip: str) -> IPInfo:
-        data = self._get_json(f"https://ipapi.org/api/ip/{quote(ip, safe='')}")
+        data = self._get_json(
+            f"https://ipapi.org/api/ip/{quote(ip, safe='')}",
+            params=self._params_with_optional_key(None, "key", self.settings.ipapi_org_key),
+        )
         provider_ip = _matching_ip(data, "ip", ip, "ipapi.org")
         asn = _mapping(data, "asn")
         location = _mapping(data, "location")
@@ -171,7 +202,10 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipinfo(self, ip: str) -> IPInfo:
-        data = self._get_json(f"https://ipinfo.io/{quote(ip, safe='')}/json")
+        data = self._get_json(
+            f"https://ipinfo.io/{quote(ip, safe='')}/json",
+            params=self._params_with_optional_key(None, "token", self.settings.ipinfo_token),
+        )
         if error := _string(data, "error"):
             raise ValueError(error)
         provider_ip = _matching_ip(data, "ip", ip, "ipinfo.io")
@@ -189,7 +223,10 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipdata(self, ip: str) -> IPInfo:
-        data = self._get_json(f"https://api.ipdata.co/{quote(ip, safe='')}")
+        data = self._get_json(
+            f"https://api.ipdata.co/{quote(ip, safe='')}",
+            params=self._params_with_optional_key(None, "api-key", self.settings.ipdata_key),
+        )
         if _string(data, "message") and not _string(data, "ip"):
             raise ValueError(_string(data, "message"))
         provider_ip = _matching_ip(data, "ip", ip, "ipdata.co")

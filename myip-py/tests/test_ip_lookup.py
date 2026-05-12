@@ -50,6 +50,11 @@ def test_lookup_explicit_ip_returns_normalized_provider_result():
             "latitude": 37.4056,
             "longitude": -122.0775,
             "provider": "test-provider",
+            "input": "8.8.8.8",
+            "resolved_ip": "8.8.8.8",
+            "resolved_ips": ["8.8.8.8"],
+            "dns_provider": None,
+            "geo_provider": "test-provider",
         }
     finally:
         app.dependency_overrides.clear()
@@ -88,19 +93,34 @@ def test_lookup_without_ip_uses_request_client_host():
         app.dependency_overrides.clear()
 
 
-def test_lookup_rejects_named_ip_query_parameter_before_calling_provider():
-    class FailingProvider:
+
+def test_lookup_domain_response_includes_resolution_metadata(monkeypatch):
+    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0)),
+        ]
+
+    class EchoProvider:
         def lookup(self, ip: str) -> IPInfo:
-            raise AssertionError("provider should not be called for unsupported named ip query")
+            return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
     try:
-        client = TestClient(app, client=("203.0.113.9", 54321), raise_server_exceptions=False)
+        client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?ip=8.8.8.8")
+        response = client.get("/api/ip?=example.com")
 
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
+        assert response.status_code == 200
+        assert response.json()["input"] == "example.com"
+        assert response.json()["resolved_ip"] == "93.184.216.34"
+        assert response.json()["resolved_ips"] == [
+            "93.184.216.34",
+            "2606:2800:220:1:248:1893:25c8:1946",
+        ]
+        assert response.json()["dns_provider"] == "system"
+        assert response.json()["geo_provider"] == "test-provider"
     finally:
         app.dependency_overrides.clear()
 
@@ -243,6 +263,11 @@ def test_lookup_private_ip_returns_local_result_without_calling_provider():
             "latitude": None,
             "longitude": None,
             "provider": "local",
+            "input": "192.168.1.1",
+            "resolved_ip": "192.168.1.1",
+            "resolved_ips": ["192.168.1.1"],
+            "dns_provider": None,
+            "geo_provider": "local",
         }
     finally:
         app.dependency_overrides.clear()
@@ -336,7 +361,81 @@ def test_default_provider_queries_ipapi_is_and_maps_response(monkeypatch):
         "latitude": 37.4056,
         "longitude": -122.0775,
         "provider": "ipapi.is",
+        "input": "8.8.8.8",
+        "resolved_ip": "8.8.8.8",
+        "resolved_ips": ["8.8.8.8"],
+        "dns_provider": None,
+        "geo_provider": "ipapi.is",
     }
+
+
+def test_default_provider_includes_configured_api_keys(monkeypatch):
+    calls: list[tuple[str, dict[str, str] | None]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict, status_code: int = 200) -> None:
+            self.payload = payload
+            self.status_code = status_code
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError(
+                    "server error",
+                    request=httpx.Request("GET", "https://example.test"),
+                    response=httpx.Response(self.status_code),
+                )
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        timeout: float,
+    ) -> FakeResponse:
+        calls.append((url, params))
+        if url == "https://api.ipapi.is":
+            return FakeResponse({}, status_code=503)
+        if url == "https://ipwho.is/8.8.8.8":
+            return FakeResponse({"success": False, "message": "nope"})
+        if url == "http://ip-api.com/json/8.8.8.8":
+            return FakeResponse({"status": "fail", "message": "nope"})
+        if url == "https://ipapi.org/api/ip/8.8.8.8":
+            return FakeResponse({}, status_code=503)
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse({}, status_code=503)
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse(
+                {
+                    "ip": "8.8.8.8",
+                    "country_name": "United States",
+                }
+            )
+        raise AssertionError(url)
+
+    monkeypatch.setenv("IPAPI_IS_KEY", "ipapi-is-secret")
+    monkeypatch.setenv("IPAPI_ORG_KEY", "ipapi-org-secret")
+    monkeypatch.setenv("IPINFO_TOKEN", "ipinfo-secret")
+    monkeypatch.setenv("IPDATA_KEY", "ipdata-secret")
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    provider = IPAPIIsLookupProvider()
+
+    result = provider.lookup("8.8.8.8")
+
+    assert result.provider == "ipdata.co"
+    assert calls == [
+        ("https://api.ipapi.is", {"q": "8.8.8.8", "key": "ipapi-is-secret"}),
+        ("https://ipwho.is/8.8.8.8", None),
+        (
+            "http://ip-api.com/json/8.8.8.8",
+            {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"},
+        ),
+        ("https://ipapi.org/api/ip/8.8.8.8", {"key": "ipapi-org-secret"}),
+        ("https://ipinfo.io/8.8.8.8/json", {"token": "ipinfo-secret"}),
+        ("https://api.ipdata.co/8.8.8.8", {"api-key": "ipdata-secret"}),
+    ]
 
 
 def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):

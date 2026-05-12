@@ -10,7 +10,7 @@ FastAPI rewrite of the myip IP information query tool.
 GET /api/health
 ```
 
-Returns service status.
+Returns service status, key presence, and public runtime config.
 
 ### IP / domain lookup
 
@@ -24,13 +24,33 @@ GET /api/ip?=example.com
 GET /api/ip?example.com
 ```
 
-Unsupported URL form:
+Named query parameters such as `?ip=8.8.8.8` are not part of the API.
 
-```bash
-GET /api/ip?ip=8.8.8.8
+## Response shape
+
+`GET /api/ip...` returns geo/IP fields plus resolution metadata:
+
+```json
+{
+  "ip": "8.8.8.8",
+  "country": "United States",
+  "country_code": "US",
+  "region": "California",
+  "city": "Mountain View",
+  "asn": "AS15169",
+  "isp": "Google LLC",
+  "latitude": 37.38605,
+  "longitude": -122.08385,
+  "provider": "ipapi.is",
+  "input": "8.8.8.8",
+  "resolved_ip": "8.8.8.8",
+  "resolved_ips": ["8.8.8.8"],
+  "dns_provider": null,
+  "geo_provider": "ipapi.is"
+}
 ```
 
-That named query parameter form intentionally returns `422`. The service accepts only the no-argument form, keyless `?=<value>`, and raw keyless `?<value>` forms.
+For domain input, `resolved_ips` contains the de-duplicated A / AAAA results and `dns_provider` is `system`, `cloudflare`, `google`, or `quad9`.
 
 ## Lookup behavior
 
@@ -39,17 +59,15 @@ That named query parameter form intentionally returns `422`. The service accepts
 - Domain input:
   1. validates that the input looks like a domain;
   2. tries system DNS via `socket.getaddrinfo`;
-  3. falls back through DoH providers;
+  3. falls back through configured DoH providers;
   4. de-duplicates A / AAAA records;
   5. uses the first resolved IP for the geo/IP provider pipeline.
 
-Current DoH fallback order:
+Default DoH fallback order:
 
 1. Cloudflare: `https://cloudflare-dns.com/dns-query`
 2. Google: `https://dns.google/resolve`
 3. Quad9: `https://dns.quad9.net/dns-query`
-
-The public response currently remains the normalized IP info model. Internally, DNS resolution tracks the selected IP, all resolved IPs, and the DNS provider used, so the API can be extended later without rewriting resolution logic.
 
 ## Geo/IP provider fallback
 
@@ -64,13 +82,37 @@ Current provider order:
 
 Provider responses must include an IP matching the requested IP. Mismatched or malformed provider payloads are treated as provider failures and the lookup falls back to the next provider.
 
+Configured provider credentials are passed when available:
+
+- `IPAPI_IS_KEY` -> `ipapi.is` `key` param
+- `IPAPI_ORG_KEY` -> `ipapi.org` `key` param
+- `IPINFO_TOKEN` -> `ipinfo.io` `token` param
+- `IPDATA_KEY` -> `ipdata.co` `api-key` param
+
 ## Local/private IP handling
 
 Private, loopback, link-local, and local IPv6 inputs are handled locally and do not call external providers.
 
+## Configuration
+
+Environment variables:
+
+- `MYIP_DEBUG`: health/config debug flag, default `false`.
+- `MYIP_CACHE_TTL_SECONDS`: IP lookup cache TTL, default `120`.
+- `MYIP_RATE_LIMIT_PER_MINUTE`: per-client rate limit, default `60`.
+- `MYIP_PROVIDER_TIMEOUT_SECONDS`: geo/IP provider HTTP timeout, default `8.0`.
+- `MYIP_DOH_TIMEOUT_SECONDS`: DoH HTTP timeout, default `5.0`.
+- `MYIP_DOH_PROVIDERS`: comma-separated DoH provider names, default `cloudflare,google,quad9`.
+
+Supported DoH provider names:
+
+- `cloudflare`
+- `google`
+- `quad9`
+
 ## Error behavior
 
-- `422`: malformed IP/domain input, unsupported named query parameters, or DNS name not found.
+- `422`: malformed IP/domain input, unsupported query strings, or DNS name not found.
 - `429`: per-client rate limit exceeded.
 - `502`: DNS resolver infrastructure unavailable, or all geo/IP lookup providers unavailable.
 

@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     myip_debug: bool = False
     myip_cache_ttl_seconds: int = 120
     myip_rate_limit_per_minute: int = 60
+    myip_provider_timeout_seconds: float = 8.0
+    myip_doh_timeout_seconds: float = 5.0
+    myip_doh_providers: str = "cloudflare,google,quad9"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -24,12 +27,18 @@ class Settings(BaseSettings):
             "ipdata_key": self._key_info(self.ipdata_key),
         }
 
-    def public_config(self) -> dict[str, int | bool]:
+    def public_config(self) -> dict[str, int | float | bool | list[str]]:
         return {
             "debug": self.myip_debug,
             "cache_ttl_seconds": self.myip_cache_ttl_seconds,
             "rate_limit_per_minute": self.myip_rate_limit_per_minute,
+            "provider_timeout_seconds": self.myip_provider_timeout_seconds,
+            "doh_timeout_seconds": self.myip_doh_timeout_seconds,
+            "doh_providers": self.doh_provider_names(),
         }
+
+    def doh_provider_names(self) -> list[str]:
+        return [name.strip() for name in self.myip_doh_providers.split(",") if name.strip()]
 
     @staticmethod
     def _key_info(value: str) -> dict[str, bool | str]:

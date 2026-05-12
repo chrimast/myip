@@ -6,12 +6,13 @@ from urllib.parse import unquote_plus
 import httpx
 from fastapi.exceptions import RequestValidationError
 
-DOH_TIMEOUT_SECONDS = 5.0
-DOH_PROVIDERS = [
-    ("cloudflare", "https://cloudflare-dns.com/dns-query"),
-    ("google", "https://dns.google/resolve"),
-    ("quad9", "https://dns.quad9.net/dns-query"),
-]
+from app.core.config import get_settings
+
+DOH_PROVIDER_ENDPOINTS = {
+    "cloudflare": "https://cloudflare-dns.com/dns-query",
+    "google": "https://dns.google/resolve",
+    "quad9": "https://dns.quad9.net/dns-query",
+}
 
 
 class DNSResolutionError(RuntimeError):
@@ -85,7 +86,7 @@ def resolve_domain(hostname: str) -> TargetResolution:
             )
 
     last_doh_error: Exception | None = None
-    for provider, endpoint in DOH_PROVIDERS:
+    for provider, endpoint in _configured_doh_providers():
         try:
             doh_ips = _lookup_doh(hostname, endpoint)
         except (httpx.HTTPError, ValueError) as exc:
@@ -108,12 +109,21 @@ def resolve_domain(hostname: str) -> TargetResolution:
     raise DNSResolutionError(f"DNS resolvers are temporarily unavailable for {hostname}")
 
 
+def _configured_doh_providers() -> list[tuple[str, str]]:
+    provider_names = get_settings().doh_provider_names()
+    return [
+        (name, DOH_PROVIDER_ENDPOINTS[name])
+        for name in provider_names
+        if name in DOH_PROVIDER_ENDPOINTS
+    ]
+
+
 def _lookup_doh(hostname: str, endpoint: str) -> list[str]:
     response = httpx.get(
         endpoint,
         params={"name": hostname, "type": "A"},
         headers={"accept": "application/dns-json"},
-        timeout=DOH_TIMEOUT_SECONDS,
+        timeout=get_settings().myip_doh_timeout_seconds,
     )
     response.raise_for_status()
     data = response.json()
