@@ -1,8 +1,8 @@
 import time
-from ipaddress import IPv4Address, IPv6Address, ip_address
+from ipaddress import ip_address
 from urllib.parse import unquote_plus
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import get_settings
@@ -42,10 +42,7 @@ def _invalid_ip_query_error(raw_ip: str) -> RequestValidationError:
     )
 
 
-def _target_ip_from_request(request: Request, ip: IPv4Address | IPv6Address | None) -> str:
-    if ip:
-        return str(ip)
-
+def _target_ip_from_request(request: Request) -> str:
     raw_query = request.url.query
     if raw_query.startswith("="):
         raw_ip = unquote_plus(raw_query[1:])
@@ -61,16 +58,18 @@ def _target_ip_from_request(request: Request, ip: IPv4Address | IPv6Address | No
         except ValueError as exc:
             raise _invalid_ip_query_error(raw_ip) from exc
 
+    if raw_query:
+        raise _invalid_ip_query_error(raw_query)
+
     return request.client.host
 
 
 @router.get("/ip", response_model=IPInfo)
 def lookup_ip(
     request: Request,
-    ip: IPv4Address | IPv6Address | None = Query(default=None),
     provider: IPLookupProvider = Depends(get_ip_lookup_provider),
 ) -> IPInfo:
-    target_ip = _target_ip_from_request(request, ip)
+    target_ip = _target_ip_from_request(request)
     _enforce_rate_limit(request.client.host)
     _ip_lookup_cache.ttl_seconds = IP_LOOKUP_CACHE_TTL_SECONDS
     if cached := _ip_lookup_cache.get(target_ip):

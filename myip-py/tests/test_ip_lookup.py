@@ -87,53 +87,37 @@ def test_lookup_without_ip_uses_request_client_host():
         app.dependency_overrides.clear()
 
 
-def test_lookup_rejects_invalid_ip_query_before_calling_provider():
+def test_lookup_rejects_named_ip_query_parameter_before_calling_provider():
+    class FailingProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            raise AssertionError("provider should not be called for unsupported named ip query")
+
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    try:
+        client = TestClient(app, client=("203.0.113.9", 54321), raise_server_exceptions=False)
+
+        response = client.get("/api/ip?ip=8.8.8.8")
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     class FailingProvider:
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for invalid IP")
 
     app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
     try:
-        client = TestClient(app)
+        client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?=not-an-ip")
+        for url in ("/api/ip?=not-an-ip", "/api/ip?=example.com", "/api/ip?="):
+            response = client.get(url)
 
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_lookup_rejects_domain_query_before_calling_provider():
-    class FailingProvider:
-        def lookup(self, ip: str) -> IPInfo:
-            raise AssertionError("provider should not be called for domain query")
-
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
-    try:
-        client = TestClient(app)
-
-        response = client.get("/api/ip?=example.com")
-
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_lookup_rejects_empty_keyless_equals_query_before_calling_provider():
-    class FailingProvider:
-        def lookup(self, ip: str) -> IPInfo:
-            raise AssertionError("provider should not be called for empty IP query")
-
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
-    try:
-        client = TestClient(app)
-
-        response = client.get("/api/ip?=")
-
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
+            assert response.status_code == 422
+            assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
     finally:
         app.dependency_overrides.clear()
 
@@ -408,6 +392,7 @@ def test_providers_reject_mismatched_response_ips_and_fallback(monkeypatch):
         url: str,
         *,
         params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: float,
     ) -> FakeResponse:
         calls.append((url, params))
@@ -417,6 +402,12 @@ def test_providers_reject_mismatched_response_ips_and_fallback(monkeypatch):
             return FakeResponse({"success": True, "ip": "1.1.1.1", "country": "Wrong"})
         if url == "http://ip-api.com/json/8.8.8.8":
             return FakeResponse({"status": "success", "query": "1.1.1.1", "country": "Wrong"})
+        if url in {
+            "https://ipapi.org/api/ip/8.8.8.8",
+            "https://ipinfo.io/8.8.8.8/json",
+            "https://api.ipdata.co/8.8.8.8",
+        }:
+            return FakeResponse({"ip": "1.1.1.1", "country": "Wrong"})
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -433,7 +424,91 @@ def test_providers_reject_mismatched_response_ips_and_fallback(monkeypatch):
             "http://ip-api.com/json/8.8.8.8",
             {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"},
         ),
+        ("https://ipapi.org/api/ip/8.8.8.8", None),
+        ("https://ipinfo.io/8.8.8.8/json", None),
+        ("https://api.ipdata.co/8.8.8.8", None),
     ]
+
+
+def test_provider_falls_back_through_ipapi_org_ipinfo_and_ipdata(monkeypatch):
+    calls: list[tuple[str, dict[str, str] | None]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict, status_code: int = 200) -> None:
+            self.payload = payload
+            self.status_code = status_code
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError(
+                    "server error",
+                    request=httpx.Request("GET", "https://example.test"),
+                    response=httpx.Response(self.status_code),
+                )
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float,
+    ) -> FakeResponse:
+        calls.append((url, params))
+        if url == "https://api.ipapi.is":
+            return FakeResponse({}, status_code=503)
+        if url == "https://ipwho.is/8.8.8.8":
+            return FakeResponse({"success": False, "message": "rate limited"})
+        if url == "http://ip-api.com/json/8.8.8.8":
+            return FakeResponse({"status": "fail", "message": "reserved range"})
+        if url == "https://ipapi.org/api/ip/8.8.8.8":
+            return FakeResponse({"ip": "1.1.1.1", "country": "Wrong"})
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse({"ip": "1.1.1.1", "country": "Wrong"})
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse(
+                {
+                    "ip": "8.8.8.8",
+                    "country_name": "United States",
+                    "country_code": "US",
+                    "region": "California",
+                    "city": "Mountain View",
+                    "asn": {"asn": "AS15169", "name": "Google LLC"},
+                    "latitude": 37.4056,
+                    "longitude": -122.0775,
+                }
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("8.8.8.8")
+
+    assert calls == [
+        ("https://api.ipapi.is", {"q": "8.8.8.8"}),
+        ("https://ipwho.is/8.8.8.8", None),
+        (
+            "http://ip-api.com/json/8.8.8.8",
+            {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"},
+        ),
+        ("https://ipapi.org/api/ip/8.8.8.8", None),
+        ("https://ipinfo.io/8.8.8.8/json", None),
+        ("https://api.ipdata.co/8.8.8.8", None),
+    ]
+    assert result == IPInfo(
+        ip="8.8.8.8",
+        country="United States",
+        country_code="US",
+        region="California",
+        city="Mountain View",
+        asn="AS15169",
+        isp="Google LLC",
+        latitude=37.4056,
+        longitude=-122.0775,
+        provider="ipdata.co",
+    )
 
 
 def test_provider_falls_back_to_ip_api_com_when_first_two_providers_fail(monkeypatch):
@@ -601,6 +676,12 @@ def test_lookup_returns_502_when_all_real_providers_fail(monkeypatch):
             return FakeResponse({"success": False, "message": "rate limited"})
         if url == "http://ip-api.com/json/8.8.8.8":
             return FakeResponse({"status": "fail", "message": "reserved range"})
+        if url in {
+            "https://ipapi.org/api/ip/8.8.8.8",
+            "https://ipinfo.io/8.8.8.8/json",
+            "https://api.ipdata.co/8.8.8.8",
+        }:
+            return FakeResponse({}, status_code=503)
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -617,6 +698,9 @@ def test_lookup_returns_502_when_all_real_providers_fail(monkeypatch):
             "http://ip-api.com/json/8.8.8.8",
             {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"},
         ),
+        ("https://ipapi.org/api/ip/8.8.8.8", None),
+        ("https://ipinfo.io/8.8.8.8/json", None),
+        ("https://api.ipdata.co/8.8.8.8", None),
     ]
 
 
@@ -652,6 +736,12 @@ def test_lookup_returns_502_when_ip_api_com_success_omits_query(monkeypatch):
             return FakeResponse({"success": False, "message": "rate limited"})
         if url == "http://ip-api.com/json/8.8.8.8":
             return FakeResponse({"status": "success", "country": "United States"})
+        if url in {
+            "https://ipapi.org/api/ip/8.8.8.8",
+            "https://ipinfo.io/8.8.8.8/json",
+            "https://api.ipdata.co/8.8.8.8",
+        }:
+            return FakeResponse({}, status_code=503)
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -668,6 +758,9 @@ def test_lookup_returns_502_when_ip_api_com_success_omits_query(monkeypatch):
             "http://ip-api.com/json/8.8.8.8",
             {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"},
         ),
+        ("https://ipapi.org/api/ip/8.8.8.8", None),
+        ("https://ipinfo.io/8.8.8.8/json", None),
+        ("https://api.ipdata.co/8.8.8.8", None),
     ]
 
 
