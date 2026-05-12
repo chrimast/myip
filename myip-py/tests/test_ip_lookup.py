@@ -165,6 +165,26 @@ def test_lookup_resolves_raw_domain_without_equals_before_calling_provider(monke
         app.dependency_overrides.clear()
 
 
+def test_lookup_returns_502_when_dns_resolvers_are_unavailable(monkeypatch):
+    def timeout_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        raise socket.timeout()
+
+    def fail_doh(*args: object, **kwargs: object) -> object:
+        raise httpx.ConnectError("DoH unavailable")
+
+    monkeypatch.setattr(socket, "getaddrinfo", timeout_getaddrinfo)
+    monkeypatch.setattr(httpx, "get", fail_doh)
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/api/ip?=example.com")
+
+        assert response.status_code == 502
+        assert response.json() == {"detail": "DNS resolvers are temporarily unavailable"}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     class FailingProvider:
         def lookup(self, ip: str) -> IPInfo:

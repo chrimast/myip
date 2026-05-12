@@ -22,6 +22,10 @@ class IPLookupProvider(Protocol):
     def lookup(self, ip: str) -> IPInfo: ...
 
 
+IP_LOOKUP_TIMEOUT_SECONDS = 8.0
+IP_API_FIELDS = "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"
+
+
 class IPLookupUnavailable(RuntimeError):
     pass
 
@@ -55,10 +59,18 @@ class IPAPIIsLookupProvider:
 
         raise IPLookupUnavailable(str(last_error)) from last_error
 
-    def _lookup_ipapi_is(self, ip: str) -> IPInfo:
-        response = httpx.get(self.endpoint, params={"q": ip}, timeout=8.0)
+    def _get_json(
+        self,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        response = httpx.get(url, params=params, timeout=IP_LOOKUP_TIMEOUT_SECONDS)
         response.raise_for_status()
-        data = response.json()
+        return response.json()
+
+    def _lookup_ipapi_is(self, ip: str) -> IPInfo:
+        data = self._get_json(self.endpoint, params={"q": ip})
         if error := _string(data, "error"):
             raise ValueError(error)
         provider_ip = _matching_ip(data, "ip", ip, "ipapi.is")
@@ -98,9 +110,7 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipwho(self, ip: str) -> IPInfo:
-        response = httpx.get(f"https://ipwho.is/{quote(ip, safe='')}", timeout=8.0)
-        response.raise_for_status()
-        data = response.json()
+        data = self._get_json(f"https://ipwho.is/{quote(ip, safe='')}")
         if data.get("success") is False:
             raise ValueError(_string(data, "message") or "ipwho.is lookup failed")
         provider_ip = _matching_ip(data, "ip", ip, "ipwho.is")
@@ -120,14 +130,10 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ip_api_com(self, ip: str) -> IPInfo:
-        fields = "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as"
-        response = httpx.get(
+        data = self._get_json(
             f"http://ip-api.com/json/{quote(ip, safe='')}",
-            params={"fields": fields},
-            timeout=8.0,
+            params={"fields": IP_API_FIELDS},
         )
-        response.raise_for_status()
-        data = response.json()
         if data.get("status") != "success":
             raise ValueError(_string(data, "message") or "ip-api.com lookup failed")
         provider_ip = _matching_ip(data, "query", ip, "ip-api.com")
@@ -147,9 +153,7 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipapi_org(self, ip: str) -> IPInfo:
-        response = httpx.get(f"https://ipapi.org/api/ip/{quote(ip, safe='')}", timeout=8.0)
-        response.raise_for_status()
-        data = response.json()
+        data = self._get_json(f"https://ipapi.org/api/ip/{quote(ip, safe='')}")
         provider_ip = _matching_ip(data, "ip", ip, "ipapi.org")
         asn = _mapping(data, "asn")
         location = _mapping(data, "location")
@@ -167,9 +171,7 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipinfo(self, ip: str) -> IPInfo:
-        response = httpx.get(f"https://ipinfo.io/{quote(ip, safe='')}/json", timeout=8.0)
-        response.raise_for_status()
-        data = response.json()
+        data = self._get_json(f"https://ipinfo.io/{quote(ip, safe='')}/json")
         if error := _string(data, "error"):
             raise ValueError(error)
         provider_ip = _matching_ip(data, "ip", ip, "ipinfo.io")
@@ -187,9 +189,7 @@ class IPAPIIsLookupProvider:
         )
 
     def _lookup_ipdata(self, ip: str) -> IPInfo:
-        response = httpx.get(f"https://api.ipdata.co/{quote(ip, safe='')}", timeout=8.0)
-        response.raise_for_status()
-        data = response.json()
+        data = self._get_json(f"https://api.ipdata.co/{quote(ip, safe='')}")
         if _string(data, "message") and not _string(data, "ip"):
             raise ValueError(_string(data, "message"))
         provider_ip = _matching_ip(data, "ip", ip, "ipdata.co")

@@ -6,7 +6,7 @@ from app.core.config import get_settings
 from app.services.ip_lookup import IPInfo, IPLookupProvider, IPLookupUnavailable, get_ip_lookup_provider
 from app.services.local_ip import local_ip_info
 from app.services.rate_limit import RateLimiter
-from app.services.target_ip import target_ip_from_query
+from app.services.target_ip import DNSResolutionError, target_ip_from_query
 from app.services.ttl_cache import TTLCache
 
 router = APIRouter(prefix="/api", tags=["ip"])
@@ -32,7 +32,10 @@ def lookup_ip(
     request: Request,
     provider: IPLookupProvider = Depends(get_ip_lookup_provider),
 ) -> IPInfo:
-    target_ip = target_ip_from_query(request.url.query, request.client.host)
+    try:
+        target_ip = target_ip_from_query(request.url.query, request.client.host)
+    except DNSResolutionError as exc:
+        raise HTTPException(status_code=502, detail="DNS resolvers are temporarily unavailable") from exc
     _enforce_rate_limit(request.client.host)
     _ip_lookup_cache.ttl_seconds = IP_LOOKUP_CACHE_TTL_SECONDS
     if cached := _ip_lookup_cache.get(target_ip):
