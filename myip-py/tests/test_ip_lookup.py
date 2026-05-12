@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import httpx
+import socket
 
 import app.api.ip as ip_api
 from app.api.ip import clear_ip_lookup_cache
@@ -104,6 +105,66 @@ def test_lookup_rejects_named_ip_query_parameter_before_calling_provider():
         app.dependency_overrides.clear()
 
 
+def test_lookup_resolves_keyless_domain_before_calling_provider(monkeypatch):
+    calls: list[str] = []
+
+    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        assert host == "example.com"
+        assert port is None
+        assert type == socket.SOCK_STREAM
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0)),
+        ]
+
+    class EchoProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            calls.append(ip)
+            return IPInfo(ip=ip, country="United States", provider="test-provider")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/api/ip?=example.com")
+
+        assert response.status_code == 200
+        assert response.json()["ip"] == "93.184.216.34"
+        assert calls == ["93.184.216.34"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_lookup_resolves_raw_domain_without_equals_before_calling_provider(monkeypatch):
+    calls: list[str] = []
+
+    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        assert host == "example.com"
+        assert port is None
+        assert type == socket.SOCK_STREAM
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0))]
+
+    class EchoProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            calls.append(ip)
+            return IPInfo(ip=ip, country="United States", provider="test-provider")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/api/ip?example.com")
+
+        assert response.status_code == 200
+        assert response.json()["ip"] == "2606:2800:220:1:248:1893:25c8:1946"
+        assert calls == ["2606:2800:220:1:248:1893:25c8:1946"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     class FailingProvider:
         def lookup(self, ip: str) -> IPInfo:
@@ -113,7 +174,7 @@ def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        for url in ("/api/ip?=not-an-ip", "/api/ip?=example.com", "/api/ip?="):
+        for url in ("/api/ip?=not-an-ip", "/api/ip?="):
             response = client.get(url)
 
             assert response.status_code == 422

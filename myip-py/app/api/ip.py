@@ -1,3 +1,4 @@
+import socket
 import time
 from ipaddress import ip_address
 from urllib.parse import unquote_plus
@@ -42,21 +43,58 @@ def _invalid_ip_query_error(raw_ip: str) -> RequestValidationError:
     )
 
 
+def _looks_like_domain(value: str) -> bool:
+    if not value or "." not in value:
+        return False
+    labels = value.rstrip(".").split(".")
+    if len(labels) < 2:
+        return False
+    for label in labels:
+        if not label or label.startswith("-") or label.endswith("-"):
+            return False
+        if not all(character.isalnum() or character == "-" for character in label):
+            return False
+    return True
+
+
+def _resolve_domain(hostname: str) -> str:
+    if not _looks_like_domain(hostname):
+        raise _invalid_ip_query_error(hostname)
+    try:
+        addresses = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise _invalid_ip_query_error(hostname) from exc
+
+    seen: set[str] = set()
+    for *_, sockaddr in addresses:
+        raw_ip = sockaddr[0]
+        try:
+            parsed_ip = str(ip_address(raw_ip))
+        except ValueError:
+            continue
+        if parsed_ip in seen:
+            continue
+        seen.add(parsed_ip)
+        return parsed_ip
+
+    raise _invalid_ip_query_error(hostname)
+
+
 def _target_ip_from_request(request: Request) -> str:
     raw_query = request.url.query
     if raw_query.startswith("="):
         raw_ip = unquote_plus(raw_query[1:])
         try:
             return str(ip_address(raw_ip))
-        except ValueError as exc:
-            raise _invalid_ip_query_error(raw_ip) from exc
+        except ValueError:
+            return _resolve_domain(raw_ip)
 
     if raw_query and "=" not in raw_query:
         raw_ip = unquote_plus(raw_query)
         try:
             return str(ip_address(raw_ip))
-        except ValueError as exc:
-            raise _invalid_ip_query_error(raw_ip) from exc
+        except ValueError:
+            return _resolve_domain(raw_ip)
 
     if raw_query:
         raise _invalid_ip_query_error(raw_query)
