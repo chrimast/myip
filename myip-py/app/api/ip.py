@@ -1,15 +1,12 @@
-import socket
 import time
-from ipaddress import ip_address
-from urllib.parse import unquote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
 
 from app.core.config import get_settings
 from app.services.ip_lookup import IPInfo, IPLookupProvider, IPLookupUnavailable, get_ip_lookup_provider
 from app.services.local_ip import local_ip_info
 from app.services.rate_limit import RateLimiter
+from app.services.target_ip import target_ip_from_query
 from app.services.ttl_cache import TTLCache
 
 router = APIRouter(prefix="/api", tags=["ip"])
@@ -30,84 +27,12 @@ def _enforce_rate_limit(client_host: str) -> None:
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
 
-def _invalid_ip_query_error(raw_ip: str) -> RequestValidationError:
-    return RequestValidationError(
-        [
-            {
-                "type": "ip_any_address",
-                "loc": ("query", "ip"),
-                "msg": "value is not a valid IPv4 or IPv6 address",
-                "input": raw_ip,
-            }
-        ]
-    )
-
-
-def _looks_like_domain(value: str) -> bool:
-    if not value or "." not in value:
-        return False
-    labels = value.rstrip(".").split(".")
-    if len(labels) < 2:
-        return False
-    for label in labels:
-        if not label or label.startswith("-") or label.endswith("-"):
-            return False
-        if not all(character.isalnum() or character == "-" for character in label):
-            return False
-    return True
-
-
-def _resolve_domain(hostname: str) -> str:
-    if not _looks_like_domain(hostname):
-        raise _invalid_ip_query_error(hostname)
-    try:
-        addresses = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise _invalid_ip_query_error(hostname) from exc
-
-    seen: set[str] = set()
-    for *_, sockaddr in addresses:
-        raw_ip = sockaddr[0]
-        try:
-            parsed_ip = str(ip_address(raw_ip))
-        except ValueError:
-            continue
-        if parsed_ip in seen:
-            continue
-        seen.add(parsed_ip)
-        return parsed_ip
-
-    raise _invalid_ip_query_error(hostname)
-
-
-def _target_ip_from_request(request: Request) -> str:
-    raw_query = request.url.query
-    if raw_query.startswith("="):
-        raw_ip = unquote_plus(raw_query[1:])
-        try:
-            return str(ip_address(raw_ip))
-        except ValueError:
-            return _resolve_domain(raw_ip)
-
-    if raw_query and "=" not in raw_query:
-        raw_ip = unquote_plus(raw_query)
-        try:
-            return str(ip_address(raw_ip))
-        except ValueError:
-            return _resolve_domain(raw_ip)
-
-    if raw_query:
-        raise _invalid_ip_query_error(raw_query)
-
-    return request.client.host
-
-
 @router.get("/ip", response_model=IPInfo)
 def lookup_ip(
     request: Request,
     provider: IPLookupProvider = Depends(get_ip_lookup_provider),
 ) -> IPInfo:
-    target_ip = _target_ip_from_request(request)
+    target_ip = target_ip_from_query(request.url.query, request.client.host)
     _enforce_rate_limit(request.client.host)
     _ip_lookup_cache.ttl_seconds = IP_LOOKUP_CACHE_TTL_SECONDS
     if cached := _ip_lookup_cache.get(target_ip):
