@@ -31,7 +31,7 @@ def test_lookup_response_exposes_intelligence_fields_for_proxy_datacenter():
     try:
         client = TestClient(app)
 
-        response = client.get("/api/ip?=8.8.8.8")
+        response = client.get("/api/ip?8.8.8.8")
 
         assert response.status_code == 200
         body = response.json()

@@ -29,7 +29,7 @@ def test_lookup_response_exposes_frontend_display_fields_for_original_homepage()
     try:
         client = TestClient(app)
 
-        response = client.get("/api/ip?=8.8.8.8")
+        response = client.get("/api/ip?8.8.8.8")
 
         assert response.status_code == 200
         body = response.json()
@@ -70,7 +70,7 @@ def test_lookup_response_exposes_go_compatible_legacy_field_aliases():
     try:
         client = TestClient(app)
 
-        response = client.get("/api/ip?=8.8.8.8")
+        response = client.get("/api/ip?8.8.8.8")
 
         assert response.status_code == 200
         body = response.json()

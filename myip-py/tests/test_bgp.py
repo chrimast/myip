@@ -151,7 +151,7 @@ def test_asrank_graphql_maps_provider_links_to_upstreams(monkeypatch):
     ]
 
 
-def test_bgp_endpoint_resolves_asn_from_ip_query(monkeypatch):
+def test_bgp_endpoint_resolves_asn_from_raw_ip_query(monkeypatch):
     from app.api import bgp as bgp_module
 
     calls = []
@@ -169,14 +169,14 @@ def test_bgp_endpoint_resolves_asn_from_ip_query(monkeypatch):
     bgp_module.clear_bgp_topology_cache()
 
     client = TestClient(app)
-    response = client.get("/api/bgp?ip=8.8.8.8&limit=1")
+    response = client.get("/api/bgp?8.8.8.8&limit=1")
 
     assert response.status_code == 200
     assert response.json()["asn"] == 15169
-    assert calls == [("ip=8.8.8.8&limit=1", "8.8.8.8")]
+    assert calls == [("8.8.8.8&limit=1", "8.8.8.8")]
 
 
-def test_bgp_endpoint_resolves_asn_from_q_query(monkeypatch):
+def test_bgp_endpoint_resolves_asn_from_raw_domain_query(monkeypatch):
     from app.api import bgp as bgp_module
 
     calls = []
@@ -194,21 +194,18 @@ def test_bgp_endpoint_resolves_asn_from_q_query(monkeypatch):
     bgp_module.clear_bgp_topology_cache()
 
     client = TestClient(app)
-    response = client.get("/api/bgp?q=example.com&limit=1")
+    response = client.get("/api/bgp?example.com&limit=1")
 
     assert response.status_code == 200
     assert response.json()["asn"] == 13335
     assert calls == ["example.com"]
 
 
-def test_bgp_endpoint_resolves_asn_from_raw_query(monkeypatch):
+def test_bgp_endpoint_resolves_asn_from_raw_as_query(monkeypatch):
     from app.api import bgp as bgp_module
 
-    calls = []
-
     def fake_resolve_asn(request: Request, value: str) -> int:
-        calls.append(value)
-        return 15169
+        raise AssertionError("raw AS query should not resolve IP/domain target")
 
     def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
         assert asn == 15169
@@ -219,11 +216,51 @@ def test_bgp_endpoint_resolves_asn_from_raw_query(monkeypatch):
     bgp_module.clear_bgp_topology_cache()
 
     client = TestClient(app)
-    response = client.get("/api/bgp?8.8.8.8")
+    response = client.get("/api/bgp?AS15169")
 
     assert response.status_code == 200
     assert response.json()["asn"] == 15169
-    assert calls == ["8.8.8.8"]
+
+
+def test_bgp_endpoint_resolves_asn_from_lowercase_raw_as_query(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def fail_resolve_asn(request: Request, value: str) -> int:
+        raise AssertionError("raw as query should not resolve IP/domain target")
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        assert asn == 15169
+        return bgp_module.BGPTopology(asn=asn, name="GOOGLE")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fail_resolve_asn)
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp?as15169")
+
+    assert response.status_code == 200
+    assert response.json()["asn"] == 15169
+
+
+def test_bgp_endpoint_rejects_keyless_equals_query(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def fail_resolve_asn(request: Request, value: str) -> int:
+        raise AssertionError("keyless equals BGP query should not resolve target")
+
+    def fail_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        raise AssertionError("keyless equals BGP query should not fetch topology")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fail_resolve_asn)
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fail_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp?=example.com")
+
+    assert response.status_code == 400
+    assert response.json() == {"ok": False, "error": "invalid target"}
 
 
 def test_bgp_endpoint_returns_asn_not_found_when_target_has_no_asn(monkeypatch):
@@ -240,7 +277,7 @@ def test_bgp_endpoint_returns_asn_not_found_when_target_has_no_asn(monkeypatch):
     bgp_module.clear_bgp_topology_cache()
 
     client = TestClient(app)
-    response = client.get("/api/bgp?ip=192.0.2.1")
+    response = client.get("/api/bgp?192.0.2.1")
 
     assert response.status_code == 400
     assert response.json() == {"ok": False, "error": "asn not found"}
@@ -283,7 +320,7 @@ def test_bgp_endpoint_returns_go_compatible_topology_for_asn(monkeypatch):
 
     client = TestClient(app)
 
-    response = client.get("/api/bgp?asn=AS15169&limit=2")
+    response = client.get("/api/bgp?AS15169&limit=2")
 
     assert response.status_code == 200
     body = response.json()
@@ -324,8 +361,8 @@ def test_bgp_endpoint_reuses_cached_topology_within_ttl(monkeypatch):
 
     client = TestClient(app)
 
-    first = client.get("/api/bgp?asn=15169&limit=1")
-    second = client.get("/api/bgp?asn=15169&limit=1")
+    first = client.get("/api/bgp?AS15169&limit=1")
+    second = client.get("/api/bgp?AS15169&limit=1")
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -354,9 +391,9 @@ def test_bgp_endpoint_refreshes_cache_after_ttl(monkeypatch):
 
     client = TestClient(app)
 
-    first = client.get("/api/bgp?asn=15169&limit=1")
+    first = client.get("/api/bgp?AS15169&limit=1")
     now["value"] = 161.0
-    second = client.get("/api/bgp?asn=15169&limit=1")
+    second = client.get("/api/bgp?AS15169&limit=1")
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -388,9 +425,9 @@ def test_bgp_endpoint_returns_stale_cache_when_asrank_refresh_fails(monkeypatch)
 
     client = TestClient(app)
 
-    first = client.get("/api/bgp?asn=15169&limit=1")
+    first = client.get("/api/bgp?AS15169&limit=1")
     now["value"] = 161.0
-    second = client.get("/api/bgp?asn=15169&limit=1")
+    second = client.get("/api/bgp?AS15169&limit=1")
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -412,7 +449,7 @@ def test_bgp_endpoint_returns_best_effort_error_without_cache(monkeypatch):
 
     client = TestClient(app)
 
-    response = client.get("/api/bgp?asn=15169&limit=1")
+    response = client.get("/api/bgp?AS15169&limit=1")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -439,7 +476,7 @@ def test_bgp_endpoint_rejects_invalid_asn_without_fetch(monkeypatch):
 
     client = TestClient(app)
 
-    response = client.get("/api/bgp?asn=not-an-asn")
+    response = client.get("/api/bgp?not-an-asn")
 
-    assert response.status_code == 400
-    assert response.json() == {"ok": False, "error": "invalid asn"}
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["msg"] == "value is not a valid IPv4 or IPv6 address"

@@ -1266,7 +1266,7 @@ function setBGPPlaceholder(text, opts={}){
       // Build URL
       let apiUrl = apiBase() + "/api/ip";
       if(raw){
-        apiUrl = `${apiBase()}/api/ip?=${encodeURIComponent(raw)}`;
+        apiUrl = `${apiBase()}/api/ip?${encodeURIComponent(raw)}`;
       }
 
       // Abort previous fetch for this transaction, create new
@@ -1377,7 +1377,7 @@ const limit = 80; // keep bounded; backend also clamps 1..300
       const t = setTimeout(()=>{ try{ bgpFetchCtrl.abort(); }catch(e){} }, timeoutMs);
 
       const base = apiBase();
-      const url = `${base}/api/bgp?asn=${encodeURIComponent(asnNum)}&limit=${encodeURIComponent(limit)}`;
+      const url = `${base}/api/bgp?AS${encodeURIComponent(asnNum)}&limit=${encodeURIComponent(limit)}`;
 
       fetch(url, { signal: bgpFetchCtrl.signal, headers: { 'Accept':'application/json' } })
         .then(async (res)=>{

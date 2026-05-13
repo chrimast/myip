@@ -37,7 +37,7 @@ def test_lookup_explicit_ip_returns_normalized_provider_result():
     try:
         client = TestClient(app)
 
-        response = client.get("/api/ip?=8.8.8.8")
+        response = client.get("/api/ip?8.8.8.8")
 
         assert response.status_code == 200
         assert response.json() == {
@@ -147,7 +147,7 @@ def test_lookup_domain_response_includes_resolution_metadata(monkeypatch):
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?=example.com")
+        response = client.get("/api/ip?example.com")
 
         assert response.status_code == 200
         assert response.json()["input"] == "example.com"
@@ -185,7 +185,7 @@ def test_lookup_resolves_keyless_domain_before_calling_provider(monkeypatch):
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?=example.com")
+        response = client.get("/api/ip?example.com")
 
         assert response.status_code == 200
         assert response.json()["ip"] == "93.184.216.34"
@@ -234,7 +234,7 @@ def test_lookup_returns_502_when_dns_resolvers_are_unavailable(monkeypatch):
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?=example.com")
+        response = client.get("/api/ip?example.com")
 
         assert response.status_code == 502
         assert response.json() == {"detail": "DNS resolvers are temporarily unavailable"}
@@ -251,7 +251,7 @@ def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        for url in ("/api/ip?=not-an-ip", "/api/ip?="):
+        for url in ("/api/ip?not-an-ip", "/api/ip?"):
             response = client.get(url)
 
             assert response.status_code == 422
@@ -286,7 +286,7 @@ def test_lookup_private_ip_returns_local_result_without_calling_provider():
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?=192.168.1.1")
+        response = client.get("/api/ip?192.168.1.1")
 
         assert response.status_code == 200
         assert response.json() == {
@@ -356,7 +356,7 @@ def test_lookup_ipv6_local_ips_return_local_result_without_calling_provider():
         client = TestClient(app, raise_server_exceptions=False)
 
         for ip in ("::1", "fc00::1", "fe80::1"):
-            response = client.get(f"/api/ip?={ip}")
+            response = client.get(f"/api/ip?{ip}")
 
             assert response.status_code == 200
             assert response.json()["ip"] == ip
@@ -375,7 +375,7 @@ def test_lookup_ipv4_link_local_returns_local_result_without_calling_provider():
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/ip?=169.254.1.1")
+        response = client.get("/api/ip?169.254.1.1")
 
         assert response.status_code == 200
         assert response.json()["ip"] == "169.254.1.1"
@@ -415,7 +415,7 @@ def test_default_provider_queries_ipapi_is_and_maps_response(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
 
     client = TestClient(app)
-    response = client.get("/api/ip?=8.8.8.8")
+    response = client.get("/api/ip?8.8.8.8")
 
     assert response.status_code == 200
     assert seen == {
@@ -702,7 +702,7 @@ def test_providers_reject_mismatched_response_ips_and_fallback(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
 
     client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/api/ip?=8.8.8.8")
+    response = client.get("/api/ip?8.8.8.8")
 
     assert response.status_code == 502
     assert response.json() == {"detail": "IP lookup providers are temporarily unavailable"}
@@ -976,7 +976,7 @@ def test_lookup_returns_502_when_all_real_providers_fail(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
 
     client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/api/ip?=8.8.8.8")
+    response = client.get("/api/ip?8.8.8.8")
 
     assert response.status_code == 502
     assert response.json() == {"detail": "IP lookup providers are temporarily unavailable"}
@@ -1036,7 +1036,7 @@ def test_lookup_returns_502_when_ip_api_com_success_omits_query(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
 
     client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/api/ip?=8.8.8.8")
+    response = client.get("/api/ip?8.8.8.8")
 
     assert response.status_code == 502
     assert response.json() == {"detail": "IP lookup providers are temporarily unavailable"}
@@ -1066,8 +1066,8 @@ def test_lookup_caches_same_ip_result_and_does_not_call_provider_twice():
     try:
         client = TestClient(app)
 
-        first = client.get("/api/ip?=8.8.8.8")
-        second = client.get("/api/ip?=8.8.8.8")
+        first = client.get("/api/ip?8.8.8.8")
+        second = client.get("/api/ip?8.8.8.8")
 
         assert first.status_code == 200
         assert second.status_code == 200
@@ -1096,11 +1096,11 @@ def test_lookup_refreshes_cache_after_ttl_expires(monkeypatch):
     try:
         client = TestClient(app)
 
-        first = client.get("/api/ip?=8.8.8.8")
+        first = client.get("/api/ip?8.8.8.8")
         now = 1005.0
-        cached = client.get("/api/ip?=8.8.8.8")
+        cached = client.get("/api/ip?8.8.8.8")
         now = 1011.0
-        refreshed = client.get("/api/ip?=8.8.8.8")
+        refreshed = client.get("/api/ip?8.8.8.8")
 
         assert first.status_code == 200
         assert cached.status_code == 200
@@ -1128,8 +1128,8 @@ def test_lookup_does_not_cache_provider_failure():
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        failed = client.get("/api/ip?=8.8.8.8")
-        recovered = client.get("/api/ip?=8.8.8.8")
+        failed = client.get("/api/ip?8.8.8.8")
+        recovered = client.get("/api/ip?8.8.8.8")
 
         assert failed.status_code == 502
         assert recovered.status_code == 200
@@ -1155,9 +1155,9 @@ def test_lookup_rate_limits_same_client_after_configured_limit(monkeypatch):
     try:
         client = TestClient(app, client=("198.51.100.88", 54321))
 
-        first = client.get("/api/ip?=8.8.8.8")
-        second = client.get("/api/ip?=8.8.8.8")
-        limited = client.get("/api/ip?=8.8.8.8")
+        first = client.get("/api/ip?8.8.8.8")
+        second = client.get("/api/ip?8.8.8.8")
+        limited = client.get("/api/ip?8.8.8.8")
 
         assert first.status_code == 200
         assert second.status_code == 200
@@ -1183,11 +1183,11 @@ def test_lookup_rate_limit_window_expiry_allows_requests_again(monkeypatch):
     try:
         client = TestClient(app, client=("198.51.100.89", 54321))
 
-        first = client.get("/api/ip?=8.8.8.8")
-        second = client.get("/api/ip?=8.8.8.8")
-        limited = client.get("/api/ip?=8.8.8.8")
+        first = client.get("/api/ip?8.8.8.8")
+        second = client.get("/api/ip?8.8.8.8")
+        limited = client.get("/api/ip?8.8.8.8")
         now = 3060.0
-        allowed_after_window = client.get("/api/ip?=8.8.8.8")
+        allowed_after_window = client.get("/api/ip?8.8.8.8")
 
         assert first.status_code == 200
         assert second.status_code == 200
