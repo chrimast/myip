@@ -19,11 +19,20 @@ class IPInfo(BaseModel):
     longitude: float | None = None
     provider: str
     network_type: str | None = None
+    ip_source: str | None = None
+    ip_source_reason: str | None = None
     ip_property: str | None = None
+    ip_property_reason: str | None = None
+    ip_property_scores: dict[str, int] | None = None
     risk_score: int | None = None
+    risk_reason: str | None = None
     risk_breakdown: dict[str, int] | None = None
+    risk_confidence: float | None = None
     human_percent: float | None = None
     bot_percent: float | None = None
+    humanbot_reason: str | None = None
+    humanbot_breakdown: dict[str, float] | None = None
+    humanbot_confidence: float | None = None
     is_proxy: bool = False
     is_vpn: bool = False
     is_tor: bool = False
@@ -45,6 +54,11 @@ class IPLookupResponse(IPInfo):
     lon: float | None = None
     org: str | None = None
     as_field: str | None = Field(default=None, serialization_alias="as")
+    asn_owner: str = ""
+    asn_domain: str = ""
+    org_domain: str = ""
+    registry: str = ""
+    reg_region: str = ""
     proxy: bool = False
     hosting: bool = False
     mobile: bool = False
@@ -443,12 +457,21 @@ def get_ip_lookup_provider() -> IPLookupProvider:
 def enrich_ip_intelligence(info: IPInfo) -> IPInfo:
     data = info.model_copy(deep=True)
     property_scores = _property_scores(data)
+    data.ip_property_scores = property_scores
     data.ip_property = _best_property(property_scores)
+    data.ip_property_reason = _ip_property_reason(data, property_scores)
+    data.ip_source = _ip_source(data)
+    data.ip_source_reason = ""
     data.risk_breakdown = _risk_breakdown(data)
     data.risk_score = _clamp(sum(data.risk_breakdown.values()), 0, 100)
+    data.risk_reason = _risk_reason(data)
+    data.risk_confidence = 0.7
     bot_score = _clamp(_bot_score(data), 0, 100)
     data.bot_percent = float(bot_score)
     data.human_percent = float(100 - bot_score)
+    data.humanbot_reason = _humanbot_reason(data)
+    data.humanbot_breakdown = {"human": data.human_percent, "bot": data.bot_percent}
+    data.humanbot_confidence = 0.7
     return data
 
 
@@ -493,6 +516,24 @@ def _best_property(scores: dict[str, int]) -> str:
     if scores["机房IP"] >= scores[best] and scores["机房IP"] > 0:
         best = "机房IP"
     return best
+
+
+def _ip_source(info: IPInfo) -> str:
+    if info.is_hosting or info.is_proxy or info.is_vpn or info.is_tor:
+        return "广播IP"
+    return "原生IP"
+
+
+def _ip_property_reason(info: IPInfo, scores: dict[str, int]) -> str:
+    return ", ".join(f"{key}:{value}" for key, value in scores.items())
+
+
+def _risk_reason(info: IPInfo) -> str:
+    return "基于代理/VPN/TOR/托管网络与网络类型综合评估"
+
+
+def _humanbot_reason(info: IPInfo) -> str:
+    return "基于 IP 属性和风险信号估算人机流量比例"
 
 
 def _risk_breakdown(info: IPInfo) -> dict[str, int]:

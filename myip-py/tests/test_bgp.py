@@ -1,0 +1,445 @@
+from fastapi import Request
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+
+def test_cidr_report_html_parser_extracts_upstream_adjacent_asns():
+    from app.services import bgp as bgp_service
+
+    html = """
+    <pre>
+    25820 IT7NET - IT7 Networks Inc, CA
+
+      Adjacency:    10  Upstream:    10  Downstream:     0
+      Upstream Adjacent AS list
+        <a href="/cgi-bin/as-report?as=AS29802&v=4&view=2.0">AS29802</a>         HVC-AS - HIVELOCITY, Inc., US
+        <a href="/cgi-bin/as-report?as=AS1299&v=4&view=2.0">AS1299</a>          TWELVE99 Arelion, fka Telia Carrier, SE
+        <a href="/cgi-bin/as-report?as=AS6939&v=4&view=2.0">AS6939</a>          HURRICANE - Hurricane Electric LLC, US
+    </pre>
+    """
+
+    upstreams = bgp_service.parse_cidr_report_upstreams(html)
+
+    assert [node.model_dump() for node in upstreams] == [
+        {"asn": 29802, "name": "HVC-AS - HIVELOCITY, Inc., US", "country_code": None, "is_tier1": False},
+        {"asn": 1299, "name": "TWELVE99 Arelion, fka Telia Carrier, SE", "country_code": None, "is_tier1": True},
+        {"asn": 6939, "name": "HURRICANE - Hurricane Electric LLC, US", "country_code": None, "is_tier1": False},
+    ]
+
+
+def test_fetch_bgp_topology_falls_back_to_cidr_report_when_asrank_has_no_upstreams(monkeypatch):
+    from app.services import bgp as bgp_service
+
+    calls = []
+
+    class FakePostResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"data": {"asn": {"asn": "25820", "asnName": "IT7NET", "asnLinks": {"edges": []}}}}
+
+    class FakeGetResponse:
+        text = """
+        <pre>
+          Upstream Adjacent AS list
+            <a href="/cgi-bin/as-report?as=AS29802&v=4&view=2.0">AS29802</a>         HVC-AS - HIVELOCITY, Inc., US
+            <a href="/cgi-bin/as-report?as=AS1299&v=4&view=2.0">AS1299</a>          TWELVE99 Arelion, fka Telia Carrier, SE
+        </pre>
+        """
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(url: str, *, json: dict, timeout: float) -> FakePostResponse:
+        calls.append(("post", url, json, timeout))
+        return FakePostResponse()
+
+    def fake_get(url: str, *, headers: dict, timeout: float) -> FakeGetResponse:
+        calls.append(("get", url, headers, timeout))
+        return FakeGetResponse()
+
+    monkeypatch.setattr(bgp_service.httpx, "post", fake_post)
+    monkeypatch.setattr(bgp_service.httpx, "get", fake_get)
+
+    topology = bgp_service.fetch_bgp_topology(25820, 2)
+
+    assert calls[0][0] == "post"
+    assert calls[1] == (
+        "get",
+        "https://www.cidr-report.org/cgi-bin/as-report?as=AS25820&view=2.0",
+        {"User-Agent": "Mozilla/5.0"},
+        10.0,
+    )
+    assert topology.asn == 25820
+    assert topology.name == "IT7NET"
+    assert [node.model_dump() for node in topology.upstreams] == [
+        {"asn": 29802, "name": "HVC-AS - HIVELOCITY, Inc., US", "country_code": None, "is_tier1": False},
+        {"asn": 1299, "name": "TWELVE99 Arelion, fka Telia Carrier, SE", "country_code": None, "is_tier1": True},
+    ]
+
+
+def test_asrank_graphql_maps_provider_links_to_upstreams(monkeypatch):
+    from app.services import bgp as bgp_service
+
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "data": {
+                    "asn": {
+                        "asn": "15169",
+                        "asnName": "GOOGLE",
+                        "asnLinks": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "relationship": "provider",
+                                        "asn0": {"asn": "15169", "asnName": "GOOGLE"},
+                                        "asn1": {"asn": "3356", "asnName": "LEVEL3"},
+                                    }
+                                },
+                                {
+                                    "node": {
+                                        "relationship": "peer",
+                                        "asn0": {"asn": "15169", "asnName": "GOOGLE"},
+                                        "asn1": {"asn": "6939", "asnName": "HURRICANE"},
+                                    }
+                                },
+                                {
+                                    "node": {
+                                        "relationship": "provider",
+                                        "asn0": {"asn": "6453", "asnName": "AS6453"},
+                                        "asn1": {"asn": "15169", "asnName": "GOOGLE"},
+                                    }
+                                },
+                            ]
+                        },
+                    }
+                }
+            }
+
+    def fake_post(url: str, *, json: dict, timeout: float) -> FakeResponse:
+        calls.append({"url": url, "json": json, "timeout": timeout})
+        return FakeResponse()
+
+    monkeypatch.setattr(bgp_service.httpx, "post", fake_post)
+
+    topology = bgp_service.fetch_bgp_topology(15169, 2)
+
+    assert calls == [
+        {
+            "url": "https://api.asrank.caida.org/v2/graphql",
+            "json": {"query": bgp_service.build_asrank_query(15169, 2)},
+            "timeout": 10.0,
+        }
+    ]
+    query = calls[0]["json"]["query"]
+    assert 'asn(asn: "15169")' in query
+    assert "asnLinks(first: 2)" in query
+    assert "rank" not in query
+    assert topology.asn == 15169
+    assert topology.name == "GOOGLE"
+    assert [node.model_dump() for node in topology.upstreams] == [
+        {"asn": 3356, "name": "LEVEL3", "country_code": None, "is_tier1": True},
+        {"asn": 6453, "name": "AS6453", "country_code": None, "is_tier1": True},
+    ]
+
+
+def test_bgp_endpoint_resolves_asn_from_ip_query(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    calls = []
+
+    def fake_resolve_asn(request: Request, value: str) -> int:
+        calls.append((request.url.query, value))
+        return 15169
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        assert asn == 15169
+        return bgp_module.BGPTopology(asn=asn, name="GOOGLE")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fake_resolve_asn)
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp?ip=8.8.8.8&limit=1")
+
+    assert response.status_code == 200
+    assert response.json()["asn"] == 15169
+    assert calls == [("ip=8.8.8.8&limit=1", "8.8.8.8")]
+
+
+def test_bgp_endpoint_resolves_asn_from_q_query(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    calls = []
+
+    def fake_resolve_asn(request: Request, value: str) -> int:
+        calls.append(value)
+        return 13335
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        assert asn == 13335
+        return bgp_module.BGPTopology(asn=asn, name="CLOUDFLARENET")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fake_resolve_asn)
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp?q=example.com&limit=1")
+
+    assert response.status_code == 200
+    assert response.json()["asn"] == 13335
+    assert calls == ["example.com"]
+
+
+def test_bgp_endpoint_resolves_asn_from_raw_query(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    calls = []
+
+    def fake_resolve_asn(request: Request, value: str) -> int:
+        calls.append(value)
+        return 15169
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        assert asn == 15169
+        return bgp_module.BGPTopology(asn=asn, name="GOOGLE")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fake_resolve_asn)
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp?8.8.8.8")
+
+    assert response.status_code == 200
+    assert response.json()["asn"] == 15169
+    assert calls == ["8.8.8.8"]
+
+
+def test_bgp_endpoint_returns_asn_not_found_when_target_has_no_asn(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def fake_resolve_asn(request: Request, value: str) -> int:
+        return 0
+
+    def fail_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        raise AssertionError("BGP fetch should not run when ASN cannot be resolved")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fake_resolve_asn)
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fail_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp?ip=192.0.2.1")
+
+    assert response.status_code == 400
+    assert response.json() == {"ok": False, "error": "asn not found"}
+
+
+def test_bgp_endpoint_returns_invalid_target_for_empty_query_without_asn(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def fail_resolve_asn(request: Request, value: str) -> int:
+        raise AssertionError("empty target should not resolve ASN")
+
+    monkeypatch.setattr(bgp_module, "resolve_asn_from_target", fail_resolve_asn)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+    response = client.get("/api/bgp")
+
+    assert response.status_code == 400
+    assert response.json() == {"ok": False, "error": "invalid target"}
+
+
+def test_bgp_endpoint_returns_go_compatible_topology_for_asn(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        assert asn == 15169
+        assert limit == 2
+        return bgp_module.BGPTopology(
+            asn=15169,
+            name="GOOGLE",
+            upstreams=[
+                bgp_module.ASNNode(asn=3356, name="Lumen", is_tier1=True),
+                bgp_module.ASNNode(asn=6453, name="Tata Communications"),
+                bgp_module.ASNNode(asn=6939, name="Hurricane Electric"),
+            ],
+        )
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    response = client.get("/api/bgp?asn=AS15169&limit=2")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["asn"] == 15169
+    assert body["data"] == {
+        "asn": 15169,
+        "name": "GOOGLE",
+        "external_links": {
+            "bgp_tools": "https://bgp.tools/as/15169#connectivity",
+            "bgp_he": "https://bgp.he.net/AS15169#_graph4",
+        },
+        "prefix": "",
+        "upstreams": [
+            {"asn": 3356, "name": "Lumen", "country_code": None, "is_tier1": True},
+            {"asn": 6453, "name": "Tata Communications", "country_code": None, "is_tier1": False},
+        ],
+    }
+
+
+def test_bgp_endpoint_reuses_cached_topology_within_ttl(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    calls = []
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        calls.append((asn, limit))
+        return bgp_module.BGPTopology(
+            asn=asn,
+            name="GOOGLE",
+            upstreams=[bgp_module.ASNNode(asn=3356, name="LEVEL3", is_tier1=True)],
+        )
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    monkeypatch.setattr(bgp_module.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(bgp_module, "BGP_CACHE_TTL_SECONDS", 60)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    first = client.get("/api/bgp?asn=15169&limit=1")
+    second = client.get("/api/bgp?asn=15169&limit=1")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == [(15169, 1)]
+    assert first.json() == second.json()
+
+
+def test_bgp_endpoint_refreshes_cache_after_ttl(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    now = {"value": 100.0}
+    calls = []
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        calls.append((asn, limit))
+        return bgp_module.BGPTopology(
+            asn=asn,
+            name=f"GOOGLE-{len(calls)}",
+            upstreams=[bgp_module.ASNNode(asn=3356, name=f"LEVEL3-{len(calls)}", is_tier1=True)],
+        )
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    monkeypatch.setattr(bgp_module.time, "monotonic", lambda: now["value"])
+    monkeypatch.setattr(bgp_module, "BGP_CACHE_TTL_SECONDS", 60)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    first = client.get("/api/bgp?asn=15169&limit=1")
+    now["value"] = 161.0
+    second = client.get("/api/bgp?asn=15169&limit=1")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == [(15169, 1), (15169, 1)]
+    assert first.json()["data"]["name"] == "GOOGLE-1"
+    assert second.json()["data"]["name"] == "GOOGLE-2"
+
+
+def test_bgp_endpoint_returns_stale_cache_when_asrank_refresh_fails(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    now = {"value": 100.0}
+    calls = []
+
+    def flaky_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        calls.append((asn, limit))
+        if len(calls) == 1:
+            return bgp_module.BGPTopology(
+                asn=asn,
+                name="GOOGLE",
+                upstreams=[bgp_module.ASNNode(asn=3356, name="LEVEL3", is_tier1=True)],
+            )
+        raise RuntimeError("ASRank unavailable")
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", flaky_fetch_topology)
+    monkeypatch.setattr(bgp_module.time, "monotonic", lambda: now["value"])
+    monkeypatch.setattr(bgp_module, "BGP_CACHE_TTL_SECONDS", 60)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    first = client.get("/api/bgp?asn=15169&limit=1")
+    now["value"] = 161.0
+    second = client.get("/api/bgp?asn=15169&limit=1")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == [(15169, 1), (15169, 1)]
+    assert second.json()["ok"] is True
+    assert second.json()["stale"] is True
+    assert second.json()["error"] == "ASRank unavailable"
+    assert second.json()["data"]["name"] == "GOOGLE"
+
+
+def test_bgp_endpoint_returns_best_effort_error_without_cache(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def failing_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        raise RuntimeError("ASRank unavailable")
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", failing_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    response = client.get("/api/bgp?asn=15169&limit=1")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": False,
+        "status": "error",
+        "http_status": 200,
+        "asn": 15169,
+        "error": "ASRank unavailable",
+        "external_links": {
+            "bgp_tools": "https://bgp.tools/as/15169#connectivity",
+            "bgp_he": "https://bgp.he.net/AS15169#_graph4",
+        },
+    }
+
+
+def test_bgp_endpoint_rejects_invalid_asn_without_fetch(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    def fail_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        raise AssertionError("invalid ASN should not call provider")
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fail_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    response = client.get("/api/bgp?asn=not-an-asn")
+
+    assert response.status_code == 400
+    assert response.json() == {"ok": False, "error": "invalid asn"}
