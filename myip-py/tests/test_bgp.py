@@ -299,6 +299,27 @@ def test_bgp_endpoint_returns_invalid_target_for_empty_query_without_asn(monkeyp
     assert response.json() == {"ok": False, "error": "invalid target"}
 
 
+def test_bgp_endpoint_defaults_to_twenty_upstreams_and_clamps_limit_to_fifty(monkeypatch):
+    from app.api import bgp as bgp_module
+
+    calls = []
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        calls.append((asn, limit))
+        return bgp_module.BGPTopology(asn=asn, name="GOOGLE")
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    bgp_module.clear_bgp_topology_cache()
+
+    client = TestClient(app)
+
+    default_response = client.get("/api/bgp?AS15169")
+    clamped_response = client.get("/api/bgp?AS13335&limit=80")
+
+    assert default_response.status_code == 200
+    assert clamped_response.status_code == 200
+    assert calls == [(15169, 20), (13335, 50)]
+
 def test_bgp_endpoint_returns_go_compatible_topology_for_asn(monkeypatch):
     from app.api import bgp as bgp_module
 

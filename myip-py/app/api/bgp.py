@@ -65,7 +65,7 @@ def _ensure_external_links(topology: BGPTopology) -> BGPTopology:
 
 
 @router.get("/bgp", response_model=None)
-def lookup_bgp(request: Request, limit: int = 80):
+def lookup_bgp(request: Request, limit: int = 20):
     target, asn_num = _target_from_request(request)
     if not asn_num:
         if not target:
@@ -74,7 +74,7 @@ def lookup_bgp(request: Request, limit: int = 80):
         if not asn_num:
             return JSONResponse({"ok": False, "error": "asn not found"}, status_code=400)
 
-    limit = max(1, min(limit, 300))
+    limit = max(1, min(limit, 50))
     now = time.monotonic()
     cached = _bgp_topology_cache.get(asn_num)
     if cached is not None:

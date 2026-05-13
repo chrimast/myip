@@ -1359,7 +1359,7 @@ function setBGPPlaceholder(text, opts={}){
       if(bgpRetryQid !== qid) clearBGPRetry();
       bgpStatusText = "正在加载…";
       renderBGPExtLinks(asnNum);
-const limit = 80; // keep bounded; backend also clamps 1..300
+const limit = 20; // homepage default; backend clamps manual/debug requests to 1..50
       bgpLoading = true;
 
       const loadingHint = '正在加载 BGP 拓扑…';
