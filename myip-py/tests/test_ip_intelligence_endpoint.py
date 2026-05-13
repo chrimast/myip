@@ -1,7 +1,13 @@
 from fastapi.testclient import TestClient
 
+from app.api.ip import clear_ip_lookup_cache
 from app.main import app
 from app.services.ip_lookup import IPInfo, get_ip_lookup_provider
+
+
+def setup_function() -> None:
+    app.dependency_overrides.clear()
+    clear_ip_lookup_cache()
 
 
 class StaticProvider:

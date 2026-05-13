@@ -15,6 +15,7 @@ from app.services.ip_lookup import (
 
 
 def setup_function() -> None:
+    app.dependency_overrides.clear()
     clear_ip_lookup_cache()
 
 
@@ -66,6 +67,17 @@ def test_lookup_explicit_ip_returns_normalized_provider_result():
             "resolved_ips": ["8.8.8.8"],
             "dns_provider": None,
             "geo_provider": "test-provider",
+            "query": "8.8.8.8",
+            "countryCode": "US",
+            "regionName": "California",
+            "lat": 37.4056,
+            "lon": -122.0775,
+            "org": "Google LLC",
+            "as": "AS15169 Google LLC",
+            "proxy": False,
+            "hosting": False,
+            "mobile": False,
+            "status": "success",
         }
     finally:
         app.dependency_overrides.clear()
@@ -290,6 +302,17 @@ def test_lookup_private_ip_returns_local_result_without_calling_provider():
             "resolved_ips": ["192.168.1.1"],
             "dns_provider": None,
             "geo_provider": "local",
+            "query": "192.168.1.1",
+            "countryCode": None,
+            "regionName": None,
+            "lat": None,
+            "lon": None,
+            "org": "Private network",
+            "as": "Private network",
+            "proxy": False,
+            "hosting": False,
+            "mobile": False,
+            "status": "success",
         }
     finally:
         app.dependency_overrides.clear()
@@ -399,6 +422,17 @@ def test_default_provider_queries_ipapi_is_and_maps_response(monkeypatch):
         "resolved_ips": ["8.8.8.8"],
         "dns_provider": None,
         "geo_provider": "ipapi.is",
+        "query": "8.8.8.8",
+        "countryCode": "US",
+        "regionName": "California",
+        "lat": 37.4056,
+        "lon": -122.0775,
+        "org": "Google LLC",
+        "as": "AS15169 Google LLC",
+        "proxy": False,
+        "hosting": False,
+        "mobile": False,
+        "status": "success",
     }
 
 

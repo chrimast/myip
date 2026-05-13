@@ -57,6 +57,7 @@ def _with_resolution_metadata(
     resolved_ips: list[str],
     dns_provider: str | None,
 ) -> IPLookupResponse:
+    legacy_as = " ".join(value for value in (info.asn, info.isp) if value) or None
     return IPLookupResponse(
         **info.model_dump(),
         input=raw_input,
@@ -64,6 +65,16 @@ def _with_resolution_metadata(
         resolved_ips=resolved_ips,
         dns_provider=dns_provider,
         geo_provider=info.provider,
+        query=info.ip,
+        countryCode=info.country_code,
+        regionName=info.region,
+        lat=info.latitude,
+        lon=info.longitude,
+        org=info.isp,
+        as_field=legacy_as,
+        proxy=info.is_proxy,
+        hosting=info.is_hosting,
+        mobile=info.is_mobile,
     )
 
 

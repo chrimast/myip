@@ -2,7 +2,7 @@ from typing import Any, Protocol
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 
@@ -29,6 +29,7 @@ class IPInfo(BaseModel):
     is_tor: bool = False
     is_mobile: bool = False
     is_hosting: bool = False
+    field_sources: dict[str, str] = Field(default_factory=dict, exclude=True)
 
 
 class IPLookupResponse(IPInfo):
@@ -37,6 +38,17 @@ class IPLookupResponse(IPInfo):
     resolved_ips: list[str] | None = None
     dns_provider: str | None = None
     geo_provider: str | None = None
+    query: str | None = None
+    countryCode: str | None = None
+    regionName: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    org: str | None = None
+    as_field: str | None = Field(default=None, serialization_alias="as")
+    proxy: bool = False
+    hosting: bool = False
+    mobile: bool = False
+    status: str = "success"
 
 
 class IPLookupProvider(Protocol):
@@ -67,6 +79,7 @@ class IPAPIIsLookupProvider:
         self.settings = get_settings()
 
     def lookup(self, ip: str) -> IPInfo:
+        results: list[IPInfo] = []
         last_error: Exception | None = None
         for lookup in (
             self._lookup_ipapi_is,
@@ -77,9 +90,14 @@ class IPAPIIsLookupProvider:
             self._lookup_ipdata,
         ):
             try:
-                return lookup(ip)
+                results.append(lookup(ip))
+                if _is_complete_provider_result(_merge_provider_results(results)):
+                    break
             except (httpx.HTTPError, ValueError) as exc:
                 last_error = exc
+
+        if results:
+            return _merge_provider_results(results)
 
         raise IPLookupUnavailable(str(last_error)) from last_error
 
@@ -339,6 +357,83 @@ def _parse_loc(value: str) -> tuple[float | None, float | None]:
         return None, None
     latitude, longitude = value.split(",", maxsplit=1)
     return _first_float(latitude), _first_float(longitude)
+
+
+def _is_complete_provider_result(info: IPInfo) -> bool:
+    required = (info.country, info.country_code, info.asn, info.isp)
+    return all(value is not None and value != "" for value in required)
+
+
+def _merge_provider_results(results: list[IPInfo]) -> IPInfo:
+    if len(results) == 1:
+        return results[0]
+    merged = results[0].model_copy(deep=True)
+    sources = _field_sources_for(merged, merged.provider)
+    provider_names = [merged.provider]
+    fields = (
+        "country",
+        "country_code",
+        "region",
+        "city",
+        "asn",
+        "isp",
+        "latitude",
+        "longitude",
+        "network_type",
+        "is_proxy",
+        "is_vpn",
+        "is_tor",
+        "is_mobile",
+        "is_hosting",
+    )
+
+    for result in results[1:]:
+        provider_names.append(result.provider)
+        for field in fields:
+            value = getattr(result, field)
+            current = getattr(merged, field)
+            if _should_take_field(current, value):
+                setattr(merged, field, value)
+                sources[field] = result.provider
+
+    merged.provider = "+".join(dict.fromkeys(provider_names))
+    merged.field_sources = sources
+    return merged
+
+
+def _field_sources_for(info: IPInfo, provider: str) -> dict[str, str]:
+    fields = (
+        "ip",
+        "country",
+        "country_code",
+        "region",
+        "city",
+        "asn",
+        "isp",
+        "latitude",
+        "longitude",
+        "network_type",
+        "is_proxy",
+        "is_vpn",
+        "is_tor",
+        "is_mobile",
+        "is_hosting",
+    )
+    return {field: provider for field in fields if _has_field_value(getattr(info, field))}
+
+
+def _should_take_field(current: Any, value: Any) -> bool:
+    if not _has_field_value(value):
+        return False
+    if isinstance(value, bool):
+        return value is True and current is not True
+    return not _has_field_value(current)
+
+
+def _has_field_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value is True
+    return value is not None and value != ""
 
 
 def get_ip_lookup_provider() -> IPLookupProvider:
