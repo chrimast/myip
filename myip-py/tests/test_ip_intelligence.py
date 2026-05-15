@@ -20,7 +20,7 @@ def test_enrich_ip_intelligence_scores_datacenter_proxy_vpn_signals():
     assert result.ip_property == "机房IP"
     assert result.ip_source == "原生IP"
     assert result.ip_source_reason == "缺少注册归属地，默认按实际出口地理位置视为一致"
-    assert result.ip_property_scores["机房IP"] >= 100
+    assert result.ip_property_scores["机房IP"] == 90
     assert result.risk_breakdown == {
         "base": 10,
         "vpn": 24,
@@ -170,3 +170,52 @@ def test_dynamic_confidence_drops_when_only_minimal_signals_are_available():
     assert minimal.humanbot_confidence == 0.4
     assert richer.risk_confidence > minimal.risk_confidence
     assert richer.humanbot_confidence > minimal.humanbot_confidence
+
+
+def test_network_type_internal_category_prefers_hosting_over_business_text():
+    result = enrich_ip_intelligence(
+        IPInfo(
+            ip="203.0.113.60",
+            provider="test-provider",
+            network_type="business hosting",
+        )
+    )
+
+    assert result.ip_property == "机房IP"
+    assert result.ip_property_scores == {"机房IP": 90, "家庭IP": 0, "商业IP": 0}
+
+
+def test_network_type_internal_category_keeps_residential_proxy_as_home_with_risk():
+    result = enrich_ip_intelligence(
+        IPInfo(
+            ip="203.0.113.61",
+            provider="test-provider",
+            network_type="residential proxy",
+            is_proxy=True,
+        )
+    )
+
+    assert result.ip_property == "家庭IP"
+    assert result.ip_property_scores == {"机房IP": 0, "家庭IP": 80, "商业IP": 0}
+    assert result.risk_breakdown == {"base": 10, "proxy": 28}
+    assert result.risk_score == 38
+
+
+def test_network_type_internal_category_does_not_use_identity_text_fields():
+    result = enrich_ip_intelligence(
+        IPInfo(
+            ip="203.0.113.62",
+            provider="test-provider",
+            network_type=None,
+            isp="Cloud Hosting Datacenter ISP",
+            org="Enterprise Cloud LLC",
+            asn_owner="Proxy VPN Hosting Corp",
+            asn_domain="cloud.example",
+            org_domain="hosting.example",
+        )
+    )
+
+    assert result.ip_property == "家庭IP"
+    assert result.ip_property_scores == {"机房IP": 0, "家庭IP": 3, "商业IP": 0}
+    assert result.risk_confidence == 0.45
+    assert result.humanbot_confidence == 0.4

@@ -569,29 +569,33 @@ def enrich_ip_intelligence(info: IPInfo) -> IPInfo:
 
 def _property_scores(info: IPInfo) -> dict[str, int]:
     scores = {"机房IP": 0, "家庭IP": 0, "商业IP": 0}
-    network_type = (info.network_type or "").lower()
+    category = _network_category(info)
 
-    if info.is_hosting:
-        scores["机房IP"] += 85
-    if info.is_mobile:
-        scores["家庭IP"] += 60
-
-    if any(word in network_type for word in ("business", "enterprise")):
-        scores["商业IP"] += 30
-    if any(word in network_type for word in ("residential", "consumer", "home")):
+    if category == "hosting":
+        scores["机房IP"] += 90
+    elif category == "residential":
         scores["家庭IP"] += 80
-    if any(word in network_type for word in ("hosting", "datacenter", "data center", "cloud")):
-        scores["机房IP"] += 35
+    elif category == "business":
+        scores["商业IP"] += 30
 
-    if _contains_any(network_type, ("hosting", "datacenter", "data center", "cloud", "vps", "server", "colo")):
-        scores["机房IP"] += 8
-    if scores["机房IP"] < 60 and _contains_any(network_type, ("telecom", "broadband", "mobile", "fiber", "cable", "dsl", "isp")):
-        scores["家庭IP"] += 12
-    if _contains_any(network_type, ("inc", "llc", "ltd", "corp", "enterprise")):
-        scores["商业IP"] += 6
+    if info.is_mobile and scores["机房IP"] == 0:
+        scores["家庭IP"] += 60
     if all(value == 0 for value in scores.values()):
         scores["家庭IP"] = 3
     return scores
+
+
+def _network_category(info: IPInfo) -> str:
+    network_type = (info.network_type or "").lower()
+    if info.is_hosting:
+        return "hosting"
+    if _contains_any(network_type, ("hosting", "datacenter", "data center", "cloud", "vps", "server", "colo")):
+        return "hosting"
+    if _contains_any(network_type, ("residential", "consumer", "home", "broadband", "fiber", "cable", "dsl", "isp")):
+        return "residential"
+    if _contains_any(network_type, ("business", "enterprise", "corporate", "commercial")):
+        return "business"
+    return "unknown"
 
 
 def _best_property(scores: dict[str, int]) -> str:
