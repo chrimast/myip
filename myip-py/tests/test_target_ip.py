@@ -14,32 +14,44 @@ from app.services.target_ip import (
 )
 
 
-def test_resolve_target_uses_system_dns_results_before_doh(monkeypatch):
-    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
-        assert host == "example.com"
-        assert port is None
-        assert type == socket.SOCK_STREAM
-        return [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
-            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0)),
-        ]
+def test_resolve_target_uses_doh_without_calling_system_dns(monkeypatch):
+    calls: list[str] = []
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "Status": 0,
+                "Answer": [
+                    {"type": 1, "data": "93.184.216.34"},
+                    {"type": 1, "data": "93.184.216.34"},
+                    {"type": 28, "data": "2606:2800:220:1:248:1893:25c8:1946"},
+                ],
+            }
+
+    def fail_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        raise AssertionError("system DNS should not be called")
+
+    def fake_get(url: str, *, params: dict[str, str], headers: dict[str, str], timeout: float) -> FakeResponse:
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
+    monkeypatch.setattr(httpx, "get", fake_get)
 
     result = resolve_target("example.com")
 
+    assert calls == ["https://cloudflare-dns.com/dns-query"]
     assert result.input == "example.com"
     assert result.selected_ip == "93.184.216.34"
     assert result.resolved_ips == ["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"]
-    assert result.dns_provider == "system"
+    assert result.dns_provider == "cloudflare"
 
 
-def test_resolve_target_falls_back_to_cloudflare_doh_when_system_dns_fails(monkeypatch):
+def test_resolve_target_uses_cloudflare_doh(monkeypatch):
     calls: list[tuple[str, dict[str, str]]] = []
-
-    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
-        raise socket.gaierror("system DNS unavailable")
 
     class FakeResponse:
         def __init__(self, payload: dict) -> None:
@@ -68,7 +80,6 @@ def test_resolve_target_falls_back_to_cloudflare_doh_when_system_dns_fails(monke
             )
         raise AssertionError(f"unexpected DoH URL: {url}")
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
     monkeypatch.setattr(httpx, "get", fake_get)
 
     result = resolve_target("example.com")
@@ -125,15 +136,42 @@ def test_resolve_target_falls_back_across_doh_providers(monkeypatch):
     assert result.dns_provider == "quad9"
 
 
-def test_target_ip_from_query_returns_selected_ip_for_domain(monkeypatch):
-    monkeypatch.setattr(
-        socket,
-        "getaddrinfo",
-        lambda host, port, *, type=0: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))],
-    )
+def test_target_ip_from_query_rejects_keyless_equals_and_resolves_raw_domain(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
 
-    assert target_ip_from_query("=example.com", "203.0.113.9") == "93.184.216.34"
+        def json(self) -> dict:
+            return {"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}]}
+
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(RequestValidationError):
+        target_ip_from_query("=example.com", "203.0.113.9")
     assert target_ip_from_query("example.com", "203.0.113.9") == "93.184.216.34"
+
+
+def test_resolve_target_extracts_hostname_from_url(monkeypatch):
+    seen: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}]}
+
+    def fake_get(url: str, *, params: dict[str, str], headers: dict[str, str], timeout: float) -> FakeResponse:
+        seen.append(params)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = resolve_target("https://example.com/path?q=1")
+
+    assert seen == [{"name": "example.com", "type": "A"}]
+    assert result.input == "https://example.com/path?q=1"
+    assert result.selected_ip == "93.184.216.34"
 
 
 def test_target_resolution_uses_configured_doh_timeout_and_provider_order(monkeypatch):
@@ -155,7 +193,6 @@ def test_target_resolution_uses_configured_doh_timeout_and_provider_order(monkey
 
     monkeypatch.setenv("MYIP_DOH_TIMEOUT_SECONDS", "1.5")
     monkeypatch.setenv("MYIP_DOH_PROVIDERS", "google,cloudflare")
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
     monkeypatch.setattr(httpx, "get", fake_get)
 
     resolution = resolve_domain("example.com")

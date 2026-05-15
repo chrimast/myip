@@ -1,7 +1,6 @@
-import socket
 from dataclasses import dataclass
 from ipaddress import ip_address
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, urlparse
 
 import httpx
 from fastapi.exceptions import RequestValidationError
@@ -44,7 +43,7 @@ def target_ip_from_query(raw_query: str, client_host: str) -> str:
     if not raw_query:
         return client_host
     if raw_query.startswith("="):
-        return normalize_ip_or_resolve_domain(unquote_plus(raw_query[1:]))
+        raise invalid_ip_query_error(raw_query)
     if "=" not in raw_query:
         return normalize_ip_or_resolve_domain(unquote_plus(raw_query))
     raise invalid_ip_query_error(raw_query)
@@ -62,35 +61,43 @@ def resolve_target(value: str) -> TargetResolution:
         parsed_ip = str(ip_address(value))
         return TargetResolution(input=value, selected_ip=parsed_ip, resolved_ips=[parsed_ip])
     except ValueError:
-        return resolve_domain(value)
+        hostname = _hostname_from_value(value)
+        result = resolve_domain(hostname)
+        if hostname != value:
+            return TargetResolution(
+                input=value,
+                selected_ip=result.selected_ip,
+                resolved_ips=result.resolved_ips,
+                dns_provider=result.dns_provider,
+            )
+        return result
+
+
+def _hostname_from_value(value: str) -> str:
+    lowered = value.lower()
+    if lowered.startswith(("http://", "https://")):
+        parsed = urlparse(value)
+        if parsed.hostname:
+            return parsed.hostname
+    return value
 
 
 def resolve_domain(hostname: str) -> TargetResolution:
     if not looks_like_domain(hostname):
         raise invalid_ip_query_error(hostname)
 
-    system_error: Exception | None = None
-    try:
-        system_ips = unique_socket_ips(socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM))
-    except socket.gaierror as exc:
-        system_error = exc
-    except OSError as exc:
-        system_error = exc
-    else:
-        if system_ips:
-            return TargetResolution(
-                input=hostname,
-                selected_ip=system_ips[0],
-                resolved_ips=system_ips,
-                dns_provider="system",
-            )
-
-    last_doh_error: Exception | None = None
+    last_error: Exception | None = None
+    saw_nxdomain = False
     for provider, endpoint in _configured_doh_providers():
         try:
             doh_ips = _lookup_doh(hostname, endpoint)
-        except (httpx.HTTPError, ValueError) as exc:
-            last_doh_error = exc
+        except ValueError as exc:
+            last_error = exc
+            if str(exc) == "domain name could not be resolved":
+                saw_nxdomain = True
+            continue
+        except httpx.HTTPError as exc:
+            last_error = exc
             continue
         if doh_ips:
             return TargetResolution(
@@ -100,7 +107,7 @@ def resolve_domain(hostname: str) -> TargetResolution:
                 dns_provider=provider,
             )
 
-    if isinstance(system_error, socket.gaierror) and last_doh_error is None:
+    if saw_nxdomain or not _configured_doh_providers():
         raise invalid_ip_query_error(
             hostname,
             error_type="dns_name_not_found",

@@ -10,6 +10,7 @@ from app.services.ip_lookup import (
     IPInfo,
     IPLookupUnavailable,
     StaticIPLookupProvider,
+    enrich_ip_intelligence,
     get_ip_lookup_provider,
 )
 
@@ -28,6 +29,8 @@ def test_lookup_explicit_ip_returns_normalized_provider_result():
             region="California",
             city="Mountain View",
             asn="AS15169",
+            asn_owner="Google LLC",
+            org="Google LLC",
             isp="Google LLC",
             latitude=37.4056,
             longitude=-122.0775,
@@ -53,24 +56,26 @@ def test_lookup_explicit_ip_returns_normalized_provider_result():
             "provider": "test-provider",
             "network_type": None,
             "ip_source": "原生IP",
-            "ip_source_reason": "",
-            "ip_property": "商业IP",
-            "ip_property_reason": "机房IP:0, 家庭IP:0, 商业IP:6",
-            "ip_property_scores": {"机房IP": 0, "家庭IP": 0, "商业IP": 6},
+            "ip_source_reason": "缺少注册归属地，默认按实际出口地理位置视为一致",
+            "ip_property": "家庭IP",
+            "ip_property_reason": "机房IP:0, 家庭IP:3, 商业IP:0",
+            "ip_property_scores": {"机房IP": 0, "家庭IP": 3, "商业IP": 0},
             "risk_score": 10,
-            "risk_reason": "基于代理/VPN/TOR/托管网络与网络类型综合评估",
+            "risk_reason": "基于代理/VPN/TOR/托管网络/爬虫/滥用信号与注册地差异综合评估",
             "risk_breakdown": {"base": 10},
-            "risk_confidence": 0.7,
-            "human_percent": 83.0,
-            "bot_percent": 17.0,
+            "risk_confidence": 0.45,
+            "human_percent": 98.0,
+            "bot_percent": 2.0,
             "humanbot_reason": "基于 IP 属性和风险信号估算人机流量比例",
-            "humanbot_breakdown": {"human": 83.0, "bot": 17.0},
-            "humanbot_confidence": 0.7,
+            "humanbot_breakdown": {"human": 98.0, "bot": 2.0},
+            "humanbot_confidence": 0.4,
             "is_proxy": False,
             "is_vpn": False,
             "is_tor": False,
             "is_mobile": False,
             "is_hosting": False,
+            "is_crawler": False,
+            "is_abuser": False,
             "input": "8.8.8.8",
             "resolved_ip": "8.8.8.8",
             "resolved_ips": ["8.8.8.8"],
@@ -131,18 +136,63 @@ def test_lookup_without_ip_uses_request_client_host():
 
 
 
+
+def test_lookup_without_ip_prefers_forwarded_headers_and_falls_back_to_server_public_ip(monkeypatch):
+    calls: list[str] = []
+
+    class EchoProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            calls.append(ip)
+            return IPInfo(ip=ip, country="Exampleland", provider="test-provider")
+
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    try:
+        client = TestClient(app, client=("127.0.0.1", 54321))
+
+        forwarded = client.get("/api/ip", headers={"X-Forwarded-For": "8.8.4.4, 10.0.0.1"})
+        real_ip = client.get("/api/ip", headers={"X-Real-IP": "1.1.1.1"})
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            @property
+            def text(self) -> str:
+                return "9.9.9.9"
+
+        monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeResponse())
+        fallback = client.get("/api/ip")
+
+        assert forwarded.status_code == 200
+        assert real_ip.status_code == 200
+        assert fallback.status_code == 200
+        assert calls == ["8.8.4.4", "1.1.1.1", "9.9.9.9"]
+    finally:
+        app.dependency_overrides.clear()
+
 def test_lookup_domain_response_includes_resolution_metadata(monkeypatch):
-    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
-        return [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
-            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0)),
-        ]
+    class FakeDNSResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "Status": 0,
+                "Answer": [
+                    {"type": 1, "data": "93.184.216.34"},
+                    {"type": 28, "data": "2606:2800:220:1:248:1893:25c8:1946"},
+                ],
+            }
+
+    def fail_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        raise AssertionError("system DNS should not be called")
 
     class EchoProvider:
         def lookup(self, ip: str) -> IPInfo:
             return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeDNSResponse())
     app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -156,7 +206,7 @@ def test_lookup_domain_response_includes_resolution_metadata(monkeypatch):
             "93.184.216.34",
             "2606:2800:220:1:248:1893:25c8:1946",
         ]
-        assert response.json()["dns_provider"] == "system"
+        assert response.json()["dns_provider"] == "cloudflare"
         assert response.json()["geo_provider"] == "test-provider"
     finally:
         app.dependency_overrides.clear()
@@ -165,22 +215,23 @@ def test_lookup_domain_response_includes_resolution_metadata(monkeypatch):
 def test_lookup_resolves_keyless_domain_before_calling_provider(monkeypatch):
     calls: list[str] = []
 
-    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
-        assert host == "example.com"
-        assert port is None
-        assert type == socket.SOCK_STREAM
-        return [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
-            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0)),
-        ]
+    class FakeDNSResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}]}
+
+    def fail_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        raise AssertionError("system DNS should not be called")
 
     class EchoProvider:
         def lookup(self, ip: str) -> IPInfo:
             calls.append(ip)
             return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeDNSResponse())
     app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -197,18 +248,23 @@ def test_lookup_resolves_keyless_domain_before_calling_provider(monkeypatch):
 def test_lookup_resolves_raw_domain_without_equals_before_calling_provider(monkeypatch):
     calls: list[str] = []
 
-    def fake_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
-        assert host == "example.com"
-        assert port is None
-        assert type == socket.SOCK_STREAM
-        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0))]
+    class FakeDNSResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"Status": 0, "Answer": [{"type": 28, "data": "2606:2800:220:1:248:1893:25c8:1946"}]}
+
+    def fail_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
+        raise AssertionError("system DNS should not be called")
 
     class EchoProvider:
         def lookup(self, ip: str) -> IPInfo:
             calls.append(ip)
             return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeDNSResponse())
     app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -242,6 +298,24 @@ def test_lookup_returns_502_when_dns_resolvers_are_unavailable(monkeypatch):
         app.dependency_overrides.clear()
 
 
+
+def test_lookup_rejects_keyless_equals_query_before_calling_provider():
+    class FailingProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            raise AssertionError("provider should not be called for removed keyless-equals query")
+
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+
+        for url in ("/api/ip?=8.8.8.8", "/api/ip?=example.com"):
+            response = client.get(url)
+
+            assert response.status_code == 422
+            assert response.json()["detail"][0]["loc"][:2] == ["query", "ip"]
+    finally:
+        app.dependency_overrides.clear()
+
 def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     class FailingProvider:
         def lookup(self, ip: str) -> IPInfo:
@@ -251,7 +325,7 @@ def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
-        for url in ("/api/ip?not-an-ip", "/api/ip?"):
+        for url in ("/api/ip?not-an-ip",):
             response = client.get(url)
 
             assert response.status_code == 422
@@ -302,24 +376,26 @@ def test_lookup_private_ip_returns_local_result_without_calling_provider():
             "provider": "local",
             "network_type": None,
             "ip_source": "原生IP",
-            "ip_source_reason": "",
+            "ip_source_reason": "缺少注册归属地，默认按实际出口地理位置视为一致",
             "ip_property": "家庭IP",
             "ip_property_reason": "机房IP:0, 家庭IP:3, 商业IP:0",
             "ip_property_scores": {"机房IP": 0, "家庭IP": 3, "商业IP": 0},
             "risk_score": 10,
-            "risk_reason": "基于代理/VPN/TOR/托管网络与网络类型综合评估",
+            "risk_reason": "基于代理/VPN/TOR/托管网络/爬虫/滥用信号与注册地差异综合评估",
             "risk_breakdown": {"base": 10},
-            "risk_confidence": 0.7,
+            "risk_confidence": 0.45,
             "human_percent": 98.0,
             "bot_percent": 2.0,
             "humanbot_reason": "基于 IP 属性和风险信号估算人机流量比例",
             "humanbot_breakdown": {"human": 98.0, "bot": 2.0},
-            "humanbot_confidence": 0.7,
+            "humanbot_confidence": 0.4,
             "is_proxy": False,
             "is_vpn": False,
             "is_tor": False,
             "is_mobile": False,
             "is_hosting": False,
+            "is_crawler": False,
+            "is_abuser": False,
             "input": "192.168.1.1",
             "resolved_ip": "192.168.1.1",
             "resolved_ips": ["192.168.1.1"],
@@ -406,10 +482,23 @@ def test_default_provider_queries_ipapi_is_and_maps_response(monkeypatch):
 
     seen: dict[str, object] = {}
 
-    def fake_get(url: str, *, params: dict[str, str], timeout: float) -> FakeResponse:
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        seen.setdefault("calls", []).append((url, params, timeout))
         seen["url"] = url
         seen["params"] = params
         seen["timeout"] = timeout
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            raise httpx.HTTPStatusError(
+                "server error",
+                request=httpx.Request("GET", "https://example.test"),
+                response=httpx.Response(503),
+            )
+        if url == "https://api.ipdata.co/8.8.8.8":
+            raise httpx.HTTPStatusError(
+                "server error",
+                request=httpx.Request("GET", "https://example.test"),
+                response=httpx.Response(503),
+            )
         return FakeResponse()
 
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -418,11 +507,11 @@ def test_default_provider_queries_ipapi_is_and_maps_response(monkeypatch):
     response = client.get("/api/ip?8.8.8.8")
 
     assert response.status_code == 200
-    assert seen == {
-        "url": "https://api.ipapi.is",
-        "params": {"q": "8.8.8.8"},
-        "timeout": 8.0,
-    }
+    assert seen["calls"] == [
+        ("https://api.ipapi.is", {"q": "8.8.8.8"}, 8.0),
+        ("https://ipinfo.io/8.8.8.8/json", None, 8.0),
+        ("https://api.ipdata.co/8.8.8.8", None, 8.0),
+    ]
     assert response.json() == {
         "ip": "8.8.8.8",
         "country": "United States",
@@ -435,25 +524,27 @@ def test_default_provider_queries_ipapi_is_and_maps_response(monkeypatch):
         "longitude": -122.0775,
         "provider": "ipapi.is",
         "network_type": None,
-        "ip_source": "原生IP",
-        "ip_source_reason": "",
-        "ip_property": "商业IP",
-        "ip_property_reason": "机房IP:0, 家庭IP:0, 商业IP:6",
-        "ip_property_scores": {"机房IP": 0, "家庭IP": 0, "商业IP": 6},
-        "risk_score": 10,
-        "risk_reason": "基于代理/VPN/TOR/托管网络与网络类型综合评估",
-        "risk_breakdown": {"base": 10},
-        "risk_confidence": 0.7,
-        "human_percent": 83.0,
-        "bot_percent": 17.0,
-        "humanbot_reason": "基于 IP 属性和风险信号估算人机流量比例",
-        "humanbot_breakdown": {"human": 83.0, "bot": 17.0},
-        "humanbot_confidence": 0.7,
-        "is_proxy": False,
+            "ip_source": "原生IP",
+            "ip_source_reason": "注册归属地/注册机构与实际出口地理位置一致: 未知注册机构/US vs US",
+            "ip_property": "家庭IP",
+            "ip_property_reason": "机房IP:0, 家庭IP:3, 商业IP:0",
+            "ip_property_scores": {"机房IP": 0, "家庭IP": 3, "商业IP": 0},
+            "risk_score": 10,
+            "risk_reason": "基于代理/VPN/TOR/托管网络/爬虫/滥用信号与注册地差异综合评估",
+            "risk_breakdown": {"base": 10},
+            "risk_confidence": 0.5,
+            "human_percent": 98.0,
+            "bot_percent": 2.0,
+            "humanbot_reason": "基于 IP 属性和风险信号估算人机流量比例",
+            "humanbot_breakdown": {"human": 98.0, "bot": 2.0},
+            "humanbot_confidence": 0.4,
+"is_proxy": False,
         "is_vpn": False,
         "is_tor": False,
         "is_mobile": False,
         "is_hosting": False,
+        "is_crawler": False,
+        "is_abuser": False,
         "input": "8.8.8.8",
         "resolved_ip": "8.8.8.8",
         "resolved_ips": ["8.8.8.8"],
@@ -590,6 +681,7 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):
                         "asn": 15169,
                         "isp": "Google LLC",
                         "org": "Google LLC",
+                        "domain": "google.com",
                     },
                 }
             )
@@ -610,10 +702,29 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):
         region="California",
         city="Mountain View",
         asn="AS15169",
+        asn_owner="Google LLC",
+        org="Google LLC",
         isp="Google LLC",
         latitude=37.4056,
         longitude=-122.0775,
         provider="ipwho.is",
+        asn_domain="google.com",
+        org_domain="google.com",
+        field_sources={
+            "ip": "ipwho.is",
+            "country": "ipwho.is",
+            "country_code": "ipwho.is",
+            "region": "ipwho.is",
+            "city": "ipwho.is",
+            "asn": "ipwho.is",
+            "asn_owner": "ipwho.is",
+            "org": "ipwho.is",
+            "isp": "ipwho.is",
+            "latitude": "ipwho.is",
+            "longitude": "ipwho.is",
+            "asn_domain": "ipwho.is",
+            "org_domain": "ipwho.is",
+        },
     )
 
 
@@ -646,7 +757,7 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_omits_ip(monkeypatch
                     "ip": "8.8.8.8",
                     "country": "United States",
                     "country_code": "US",
-                    "connection": {"asn": 15169, "isp": "Google LLC"},
+                    "connection": {"asn": 15169, "isp": "Google LLC", "domain": "google.com"},
                 }
             )
         raise AssertionError(f"unexpected URL: {url}")
@@ -658,6 +769,11 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_omits_ip(monkeypatch
     assert calls == [
         ("https://api.ipapi.is", {"q": "8.8.8.8"}),
         ("https://ipwho.is/8.8.8.8", None),
+        (
+            "http://ip-api.com/json/8.8.8.8",
+            {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as,mobile,proxy,hosting"},
+        ),
+        ("https://ipapi.org/api/ip/8.8.8.8", None),
     ]
     assert result.provider == "ipwho.is"
     assert result.ip == "8.8.8.8"
@@ -764,7 +880,7 @@ def test_provider_falls_back_through_ipapi_org_ipinfo_and_ipdata(monkeypatch):
                     "country_code": "US",
                     "region": "California",
                     "city": "Mountain View",
-                    "asn": {"asn": "AS15169", "name": "Google LLC"},
+                    "asn": {"asn": "AS15169", "name": "Google LLC", "domain": "google.com"},
                     "latitude": 37.4056,
                     "longitude": -122.0775,
                 }
@@ -793,10 +909,27 @@ def test_provider_falls_back_through_ipapi_org_ipinfo_and_ipdata(monkeypatch):
         region="California",
         city="Mountain View",
         asn="AS15169",
+        asn_owner="Google LLC",
+        org="Google LLC",
         isp="Google LLC",
         latitude=37.4056,
         longitude=-122.0775,
         provider="ipdata.co",
+        asn_domain="google.com",
+        field_sources={
+            "ip": "ipdata.co",
+            "country": "ipdata.co",
+            "country_code": "ipdata.co",
+            "region": "ipdata.co",
+            "city": "ipdata.co",
+            "asn": "ipdata.co",
+            "asn_owner": "ipdata.co",
+            "org": "ipdata.co",
+            "isp": "ipdata.co",
+            "latitude": "ipdata.co",
+            "longitude": "ipdata.co",
+            "asn_domain": "ipdata.co",
+        },
     )
 
 
@@ -858,6 +991,8 @@ def test_provider_falls_back_to_ip_api_com_when_first_two_providers_fail(monkeyp
             "http://ip-api.com/json/8.8.8.8",
             {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as,mobile,proxy,hosting"},
         ),
+        ("https://ipinfo.io/8.8.8.8/json", None),
+        ("https://api.ipdata.co/8.8.8.8", None),
     ]
     assert result == IPInfo(
         ip="8.8.8.8",
@@ -866,10 +1001,25 @@ def test_provider_falls_back_to_ip_api_com_when_first_two_providers_fail(monkeyp
         region="California",
         city="Mountain View",
         asn="AS15169",
+        asn_owner="Google LLC",
+        org="Google LLC",
         isp="Google LLC",
         latitude=37.4223,
         longitude=-122.085,
         provider="ip-api.com",
+        field_sources={
+            "ip": "ip-api.com",
+            "country": "ip-api.com",
+            "country_code": "ip-api.com",
+            "region": "ip-api.com",
+            "city": "ip-api.com",
+            "asn": "ip-api.com",
+            "asn_owner": "ip-api.com",
+            "org": "ip-api.com",
+            "isp": "ip-api.com",
+            "latitude": "ip-api.com",
+            "longitude": "ip-api.com",
+        },
     )
 
 
@@ -927,6 +1077,7 @@ def test_provider_falls_back_to_ip_api_com_when_ipwho_omits_ip(monkeypatch):
             "http://ip-api.com/json/8.8.8.8",
             {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as,mobile,proxy,hosting"},
         ),
+        ("https://ipapi.org/api/ip/8.8.8.8", None),
     ]
     assert result.provider == "ip-api.com"
     assert result.ip == "8.8.8.8"
@@ -1195,3 +1346,101 @@ def test_lookup_rate_limit_window_expiry_allows_requests_again(monkeypatch):
         assert allowed_after_window.status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+def test_lookup_response_includes_registry_and_registration_region():
+    class EchoProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            return IPInfo(
+                ip=ip,
+                country="United States",
+                country_code="US",
+                asn="AS15169",
+                isp="Google LLC",
+                provider="test-provider",
+                registry="ARIN",
+                reg_region="US",
+            )
+
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/ip?8.8.8.8")
+
+        assert response.status_code == 200
+        assert response.json()["registry"] == "ARIN"
+        assert response.json()["reg_region"] == "US"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_lookup_response_includes_asn_and_org_domains():
+    class EchoProvider:
+        def lookup(self, ip: str) -> IPInfo:
+            return IPInfo(
+                ip=ip,
+                country="United States",
+                country_code="US",
+                asn="AS15169",
+                isp="Google LLC",
+                provider="test-provider",
+                asn_domain="google.com",
+                org_domain="google.com",
+            )
+
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/ip?8.8.8.8")
+
+        assert response.status_code == 200
+        assert response.json()["asn_domain"] == "google.com"
+        assert response.json()["org_domain"] == "google.com"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_lookup_prefers_independent_registry_lookup_for_registration_fields(monkeypatch):
+    from app.api import ip as ip_api
+
+    class ProviderWithWrongProviderRegistry:
+        def lookup(self, ip: str) -> IPInfo:
+            return IPInfo(
+                ip=ip,
+                country="Netherlands",
+                country_code="NL",
+                asn="AS15169",
+                isp="Google LLC",
+                provider="fake",
+                network_type="hosting",
+                registry="RIPE NCC",
+                reg_region="NL",
+            )
+
+    class FakeRegistryResult:
+        registry = "ARIN"
+        reg_region = "US"
+        source = "ripestat"
+
+    class FakeRegistryClient:
+        def lookup(self, ip: str) -> FakeRegistryResult:
+            assert ip == "8.8.8.8"
+            return FakeRegistryResult()
+
+    app.dependency_overrides[get_ip_lookup_provider] = lambda: ProviderWithWrongProviderRegistry()
+    monkeypatch.setattr(ip_api, "get_registry_lookup_client", lambda: FakeRegistryClient())
+    clear_ip_lookup_cache()
+    try:
+        response = TestClient(app).get("/api/ip?8.8.8.8")
+    finally:
+        app.dependency_overrides.clear()
+        clear_ip_lookup_cache()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["registry"] == "ARIN"
+    assert body["reg_region"] == "US"
+    assert body["ip_property"] == "机房IP"
+    assert body["ip_source"] == "广播IP"

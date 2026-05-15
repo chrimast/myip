@@ -20,10 +20,13 @@ def test_lookup_response_exposes_frontend_display_fields_for_original_homepage()
             city="Mountain View",
             asn="AS15169",
             isp="Google LLC",
+            org="Google Enterprise Customer LLC",
             latitude=37.4056,
             longitude=-122.0775,
             provider="test-provider",
             network_type="business",
+            asn_domain="google.example",
+            org_domain="enterprise.example",
         )
     )
     try:
@@ -34,19 +37,20 @@ def test_lookup_response_exposes_frontend_display_fields_for_original_homepage()
         assert response.status_code == 200
         body = response.json()
         assert body["asn_owner"] == "Google LLC"
-        assert body["org_domain"] == ""
-        assert body["asn_domain"] == ""
+        assert body["org"] == "Google Enterprise Customer LLC"
+        assert body["org_domain"] == "enterprise.example"
+        assert body["asn_domain"] == "google.example"
         assert body["registry"] == ""
         assert body["reg_region"] == "US"
         assert body["ip_source"] == "原生IP"
-        assert body["ip_source_reason"] == ""
+        assert body["ip_source_reason"] == "缺少注册归属地，默认按实际出口地理位置视为一致"
         assert body["ip_property"] == "商业IP"
         assert body["ip_property_reason"]
-        assert body["ip_property_scores"] == {"机房IP": 0, "家庭IP": 0, "商业IP": 36}
+        assert body["ip_property_scores"] == {"机房IP": 0, "家庭IP": 0, "商业IP": 30}
         assert body["risk_reason"]
-        assert body["risk_confidence"] == 0.7
+        assert body["risk_confidence"] == 0.6
         assert body["humanbot_reason"]
-        assert body["humanbot_confidence"] == 0.7
+        assert body["humanbot_confidence"] == 0.55
 
     finally:
         app.dependency_overrides.clear()

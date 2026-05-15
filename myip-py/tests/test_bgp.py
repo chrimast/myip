@@ -4,6 +4,165 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
+def test_merge_upstream_observations_marks_shared_asns_stable_and_single_source_observed():
+    from app.services import bgp as bgp_service
+
+    topology = bgp_service.merge_upstream_observations(
+        asn=25820,
+        name="IT7NET",
+        caida=[
+            bgp_service.ASNNode(asn=1299, name="Arelion", is_tier1=True),
+            bgp_service.ASNNode(asn=6939, name="Hurricane Electric"),
+        ],
+        ripestat=[
+            bgp_service.ASNNode(asn=1299, name="TWELVE99"),
+            bgp_service.ASNNode(asn=29802, name="Hivelocity"),
+        ],
+        cidr=[
+            bgp_service.ASNNode(asn=6939, name="HURRICANE"),
+            bgp_service.ASNNode(asn=20473, name="Vultr"),
+        ],
+    )
+
+    assert [node.model_dump() for node in topology.upstreams] == [
+        {
+            "asn": 1299,
+            "name": "Arelion",
+            "country_code": None,
+            "is_tier1": True,
+            "sources": ["caida", "ripestat"],
+            "edge_state": "stable",
+            "edge_label": "稳定",
+            "edge_style": "solid_thick",
+        },
+        {
+            "asn": 6939,
+            "name": "Hurricane Electric",
+            "country_code": None,
+            "is_tier1": False,
+            "sources": ["caida", "cidr"],
+            "edge_state": "stable",
+            "edge_label": "稳定",
+            "edge_style": "solid_thick",
+        },
+        {
+            "asn": 29802,
+            "name": "Hivelocity",
+            "country_code": None,
+            "is_tier1": False,
+            "sources": ["ripestat"],
+            "edge_state": "observed",
+            "edge_label": "观测",
+            "edge_style": "dashed",
+        },
+        {
+            "asn": 20473,
+            "name": "Vultr",
+            "country_code": None,
+            "is_tier1": False,
+            "sources": ["cidr"],
+            "edge_state": "observed",
+            "edge_label": "观测",
+            "edge_style": "dashed",
+        },
+    ]
+
+
+def test_fetch_bgp_topology_merges_caida_ripestat_left_and_cidr_upstreams(monkeypatch):
+    from app.services import bgp as bgp_service
+
+    calls = []
+
+    class FakePostResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "data": {
+                    "asn": {
+                        "asn": "25820",
+                        "asnName": "IT7NET",
+                        "asnLinks": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "relationship": "provider",
+                                        "asn0": {"asn": "25820", "asnName": "IT7NET"},
+                                        "asn1": {"asn": "1299", "asnName": "Arelion"},
+                                    }
+                                },
+                                {
+                                    "node": {
+                                        "relationship": "provider",
+                                        "asn0": {"asn": "6939", "asnName": "Hurricane Electric"},
+                                        "asn1": {"asn": "25820", "asnName": "IT7NET"},
+                                    }
+                                },
+                            ]
+                        },
+                    }
+                }
+            }
+
+    class FakeGetResponse:
+        def __init__(self, url: str):
+            self.url = url
+            if "stat.ripe.net" in url:
+                self._json = {
+                    "status": "ok",
+                    "data": {
+                        "neighbours": [
+                            {"asn": 1299, "type": "left"},
+                            {"asn": 29802, "type": "left"},
+                            {"asn": 6453, "type": "right"},
+                            {"asn": 3356, "type": "uncertain"},
+                        ]
+                    },
+                }
+                self.text = ""
+            else:
+                self._json = {}
+                self.text = """
+                <pre>
+                  Upstream Adjacent AS list
+                    <a href="/cgi-bin/as-report?as=AS6939&v=4&view=2.0">AS6939</a>          HURRICANE - Hurricane Electric LLC, US
+                    <a href="/cgi-bin/as-report?as=AS20473&v=4&view=2.0">AS20473</a>         AS-VULTR - The Constant Company, LLC, US
+                </pre>
+                """
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._json
+
+    def fake_post(url: str, *, json: dict, timeout: float) -> FakePostResponse:
+        calls.append(("post", url, timeout))
+        return FakePostResponse()
+
+    def fake_get(url: str, *, headers: dict | None = None, timeout: float) -> FakeGetResponse:
+        calls.append(("get", url, headers, timeout))
+        return FakeGetResponse(url)
+
+    monkeypatch.setattr(bgp_service.httpx, "post", fake_post)
+    monkeypatch.setattr(bgp_service.httpx, "get", fake_get)
+
+    topology = bgp_service.fetch_bgp_topology(25820, 10)
+
+    assert calls == [
+        ("post", "https://api.asrank.caida.org/v2/graphql", 10.0),
+        ("get", "https://stat.ripe.net/data/asn-neighbours/data.json?resource=AS25820&lod=0", {"Accept": "application/json"}, 5.0),
+        ("get", "https://www.cidr-report.org/cgi-bin/as-report?as=AS25820&view=2.0", {"User-Agent": "Mozilla/5.0"}, 10.0),
+    ]
+    assert [(node.asn, node.edge_label, node.edge_style, node.sources) for node in topology.upstreams] == [
+        (1299, "稳定", "solid_thick", ["caida", "ripestat"]),
+        (6939, "稳定", "solid_thick", ["caida", "cidr"]),
+        (29802, "观测", "dashed", ["ripestat"]),
+        (20473, "观测", "dashed", ["cidr"]),
+    ]
+
+
 def test_cidr_report_html_parser_extracts_upstream_adjacent_asns():
     from app.services import bgp as bgp_service
 
@@ -22,9 +181,9 @@ def test_cidr_report_html_parser_extracts_upstream_adjacent_asns():
     upstreams = bgp_service.parse_cidr_report_upstreams(html)
 
     assert [node.model_dump() for node in upstreams] == [
-        {"asn": 29802, "name": "HVC-AS - HIVELOCITY, Inc., US", "country_code": None, "is_tier1": False},
-        {"asn": 1299, "name": "TWELVE99 Arelion, fka Telia Carrier, SE", "country_code": None, "is_tier1": True},
-        {"asn": 6939, "name": "HURRICANE - Hurricane Electric LLC, US", "country_code": None, "is_tier1": False},
+        {"asn": 29802, "name": "HVC-AS - HIVELOCITY, Inc., US", "country_code": None, "is_tier1": False, "sources": [], "edge_state": "", "edge_label": "", "edge_style": ""},
+        {"asn": 1299, "name": "TWELVE99 Arelion, fka Telia Carrier, SE", "country_code": None, "is_tier1": True, "sources": [], "edge_state": "", "edge_label": "", "edge_style": ""},
+        {"asn": 6939, "name": "HURRICANE - Hurricane Electric LLC, US", "country_code": None, "is_tier1": False, "sources": [], "edge_state": "", "edge_label": "", "edge_style": ""},
     ]
 
 
@@ -41,16 +200,25 @@ def test_fetch_bgp_topology_falls_back_to_cidr_report_when_asrank_has_no_upstrea
             return {"data": {"asn": {"asn": "25820", "asnName": "IT7NET", "asnLinks": {"edges": []}}}}
 
     class FakeGetResponse:
-        text = """
-        <pre>
-          Upstream Adjacent AS list
-            <a href="/cgi-bin/as-report?as=AS29802&v=4&view=2.0">AS29802</a>         HVC-AS - HIVELOCITY, Inc., US
-            <a href="/cgi-bin/as-report?as=AS1299&v=4&view=2.0">AS1299</a>          TWELVE99 Arelion, fka Telia Carrier, SE
-        </pre>
-        """
+        def __init__(self, url: str):
+            if "stat.ripe.net" in url:
+                self.text = ""
+                self._json = {"data": {"neighbours": []}}
+            else:
+                self.text = """
+                <pre>
+                  Upstream Adjacent AS list
+                    <a href="/cgi-bin/as-report?as=AS29802&v=4&view=2.0">AS29802</a>         HVC-AS - HIVELOCITY, Inc., US
+                    <a href="/cgi-bin/as-report?as=AS1299&v=4&view=2.0">AS1299</a>          TWELVE99 Arelion, fka Telia Carrier, SE
+                </pre>
+                """
+                self._json = {}
 
         def raise_for_status(self) -> None:
             return None
+
+        def json(self) -> dict:
+            return self._json
 
     def fake_post(url: str, *, json: dict, timeout: float) -> FakePostResponse:
         calls.append(("post", url, json, timeout))
@@ -58,7 +226,7 @@ def test_fetch_bgp_topology_falls_back_to_cidr_report_when_asrank_has_no_upstrea
 
     def fake_get(url: str, *, headers: dict, timeout: float) -> FakeGetResponse:
         calls.append(("get", url, headers, timeout))
-        return FakeGetResponse()
+        return FakeGetResponse(url)
 
     monkeypatch.setattr(bgp_service.httpx, "post", fake_post)
     monkeypatch.setattr(bgp_service.httpx, "get", fake_get)
@@ -68,6 +236,12 @@ def test_fetch_bgp_topology_falls_back_to_cidr_report_when_asrank_has_no_upstrea
     assert calls[0][0] == "post"
     assert calls[1] == (
         "get",
+        "https://stat.ripe.net/data/asn-neighbours/data.json?resource=AS25820&lod=0",
+        {"Accept": "application/json"},
+        5.0,
+    )
+    assert calls[2] == (
+        "get",
         "https://www.cidr-report.org/cgi-bin/as-report?as=AS25820&view=2.0",
         {"User-Agent": "Mozilla/5.0"},
         10.0,
@@ -75,8 +249,8 @@ def test_fetch_bgp_topology_falls_back_to_cidr_report_when_asrank_has_no_upstrea
     assert topology.asn == 25820
     assert topology.name == "IT7NET"
     assert [node.model_dump() for node in topology.upstreams] == [
-        {"asn": 29802, "name": "HVC-AS - HIVELOCITY, Inc., US", "country_code": None, "is_tier1": False},
-        {"asn": 1299, "name": "TWELVE99 Arelion, fka Telia Carrier, SE", "country_code": None, "is_tier1": True},
+        {"asn": 29802, "name": "HVC-AS - HIVELOCITY, Inc., US", "country_code": None, "is_tier1": False, "sources": ["cidr"], "edge_state": "observed", "edge_label": "观测", "edge_style": "dashed"},
+        {"asn": 1299, "name": "TWELVE99 Arelion, fka Telia Carrier, SE", "country_code": None, "is_tier1": True, "sources": ["cidr"], "edge_state": "observed", "edge_label": "观测", "edge_style": "dashed"},
     ]
 
 
@@ -129,6 +303,8 @@ def test_asrank_graphql_maps_provider_links_to_upstreams(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(bgp_service.httpx, "post", fake_post)
+    monkeypatch.setattr(bgp_service, "fetch_ripestat_left_neighbours", lambda asn: [])
+    monkeypatch.setattr(bgp_service, "fetch_cidr_report_upstreams", lambda asn: [])
 
     topology = bgp_service.fetch_bgp_topology(15169, 2)
 
@@ -146,8 +322,8 @@ def test_asrank_graphql_maps_provider_links_to_upstreams(monkeypatch):
     assert topology.asn == 15169
     assert topology.name == "GOOGLE"
     assert [node.model_dump() for node in topology.upstreams] == [
-        {"asn": 3356, "name": "LEVEL3", "country_code": None, "is_tier1": True},
-        {"asn": 6453, "name": "AS6453", "country_code": None, "is_tier1": True},
+        {"asn": 3356, "name": "LEVEL3", "country_code": None, "is_tier1": True, "sources": ["caida"], "edge_state": "observed", "edge_label": "观测", "edge_style": "dashed"},
+        {"asn": 6453, "name": "AS6453", "country_code": None, "is_tier1": True, "sources": ["caida"], "edge_state": "observed", "edge_label": "观测", "edge_style": "dashed"},
     ]
 
 
@@ -356,8 +532,8 @@ def test_bgp_endpoint_returns_go_compatible_topology_for_asn(monkeypatch):
         },
         "prefix": "",
         "upstreams": [
-            {"asn": 3356, "name": "Lumen", "country_code": None, "is_tier1": True},
-            {"asn": 6453, "name": "Tata Communications", "country_code": None, "is_tier1": False},
+            {"asn": 3356, "name": "Lumen", "country_code": None, "is_tier1": True, "sources": [], "edge_state": "", "edge_label": "", "edge_style": ""},
+            {"asn": 6453, "name": "Tata Communications", "country_code": None, "is_tier1": False, "sources": [], "edge_state": "", "edge_label": "", "edge_style": ""},
         ],
     }
 

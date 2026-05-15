@@ -7,8 +7,10 @@ from pydantic import BaseModel, Field
 
 ASRANK_GRAPHQL_URL = "https://api.asrank.caida.org/v2/graphql"
 CIDR_REPORT_URL = "https://www.cidr-report.org/cgi-bin/as-report?as=AS{asn}&view=2.0"
+RIPESTAT_ASN_NEIGHBOURS_URL = "https://stat.ripe.net/data/asn-neighbours/data.json?resource=AS{asn}&lod=0"
 ASRANK_TIMEOUT_SECONDS = 10.0
 CIDR_REPORT_TIMEOUT_SECONDS = 10.0
+RIPESTAT_TIMEOUT_SECONDS = 5.0
 TIER1_ASNS = {174, 3356, 2914, 3257, 6762, 1299, 6453, 7018, 3491, 3320, 1239, 5511}
 
 
@@ -17,6 +19,10 @@ class ASNNode(BaseModel):
     name: str | None = None
     country_code: str | None = None
     is_tier1: bool = False
+    sources: list[str] = Field(default_factory=list)
+    edge_state: str = ""
+    edge_label: str = ""
+    edge_style: str = ""
 
 
 class BGPTopology(BaseModel):
@@ -68,10 +74,41 @@ def fetch_bgp_topology(asn: int, limit: int) -> BGPTopology:
         timeout=ASRANK_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
-    topology = _asrank_payload_to_topology(asn, response.json())
-    if not topology.upstreams:
-        topology.upstreams = fetch_cidr_report_upstreams(asn)[:limit]
-    return topology
+    caida_topology = _asrank_payload_to_topology(asn, response.json())
+    ripestat_upstreams = fetch_ripestat_left_neighbours(asn)
+    cidr_upstreams = fetch_cidr_report_upstreams(asn)
+    return limit_bgp_topology(
+        merge_upstream_observations(
+            asn=asn,
+            name=caida_topology.name,
+            caida=caida_topology.upstreams,
+            ripestat=ripestat_upstreams,
+            cidr=cidr_upstreams,
+        ),
+        limit,
+    )
+
+
+def fetch_ripestat_left_neighbours(asn: int) -> list[ASNNode]:
+    response = httpx.get(
+        RIPESTAT_ASN_NEIGHBOURS_URL.format(asn=asn),
+        headers={"Accept": "application/json"},
+        timeout=RIPESTAT_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    neighbours = ((payload.get("data") or {}).get("neighbours")) or []
+    upstreams: list[ASNNode] = []
+    seen: set[int] = set()
+    for neighbour in neighbours:
+        if (neighbour or {}).get("type") != "left":
+            continue
+        peer_asn = _int_from_asn((neighbour or {}).get("asn"))
+        if not peer_asn or peer_asn in seen:
+            continue
+        seen.add(peer_asn)
+        upstreams.append(ASNNode(asn=peer_asn, is_tier1=peer_asn in TIER1_ASNS))
+    return upstreams
 
 
 def fetch_cidr_report_upstreams(asn: int) -> list[ASNNode]:
@@ -110,6 +147,52 @@ def parse_cidr_report_upstreams(html: str) -> list[ASNNode]:
             )
         )
     return upstreams
+
+
+def merge_upstream_observations(
+    *,
+    asn: int,
+    name: str | None,
+    caida: list[ASNNode],
+    ripestat: list[ASNNode],
+    cidr: list[ASNNode],
+) -> BGPTopology:
+    topology = minimal_bgp_topology(asn)
+    topology.name = name
+    by_asn: dict[int, ASNNode] = {}
+    sources_by_asn: dict[int, list[str]] = {}
+
+    for source_name, nodes in (("caida", caida), ("ripestat", ripestat), ("cidr", cidr)):
+        for node in nodes:
+            if not node.asn:
+                continue
+            if node.asn not in by_asn:
+                by_asn[node.asn] = node.model_copy(update={"sources": []})
+                sources_by_asn[node.asn] = []
+            elif not by_asn[node.asn].name and node.name:
+                by_asn[node.asn].name = node.name
+            by_asn[node.asn].is_tier1 = by_asn[node.asn].is_tier1 or node.is_tier1 or node.asn in TIER1_ASNS
+            if source_name not in sources_by_asn[node.asn]:
+                sources_by_asn[node.asn].append(source_name)
+
+    def sort_key(item: tuple[int, ASNNode]) -> int:
+        peer_asn, _node = item
+        return 0 if len(sources_by_asn[peer_asn]) >= 2 else 1
+
+    for peer_asn, node in sorted(by_asn.items(), key=sort_key):
+        sources = sources_by_asn[peer_asn]
+        stable = len(sources) >= 2
+        topology.upstreams.append(
+            node.model_copy(
+                update={
+                    "sources": sources,
+                    "edge_state": "stable" if stable else "observed",
+                    "edge_label": "稳定" if stable else "观测",
+                    "edge_style": "solid_thick" if stable else "dashed",
+                }
+            )
+        )
+    return topology
 
 
 def _asrank_payload_to_topology(asn: int, payload: dict[str, Any]) -> BGPTopology:

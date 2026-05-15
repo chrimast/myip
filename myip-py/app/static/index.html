@@ -1031,11 +1031,22 @@ renderState.text.set("__riskUIKey", __riskKey);
         seen.add(id);
 
         const label = `AS${id}`;
-        const title = `${label}${u.name ? " · " + escapeHTML(u.name) : ""}`;
+        const edgeLabel = safeText(u.edge_label, '观测');
+        const sourceText = Array.isArray(u.sources) && u.sources.length ? ` · 来源: ${u.sources.join(', ')}` : '';
+        const title = `${label}${u.name ? " · " + escapeHTML(u.name) : ""} · ${edgeLabel}${sourceText}`;
         const group = u.is_tier1 ? "tier1" : "nontier1";
+        const stable = u.edge_state === 'stable' || u.edge_style === 'solid_thick';
 
         nodes.push({ id, label, title, group });
-        edges.push({ from: asn, to: id, group });
+        edges.push({
+          from: asn,
+          to: id,
+          group,
+          label: edgeLabel,
+          width: stable ? 4 : 2,
+          dashes: stable ? false : [8, 6],
+          title: `${edgeLabel}${sourceText}`,
+        });
       });
 
       return { nodes, edges, counts: { upstreams: upstreams.length } };
@@ -1085,7 +1096,7 @@ function renderBGPGraph(bgp){
           stabilization: { enabled: true, iterations: 220, updateInterval: 30 }
         },
         nodes: { shape: "dot", borderWidth: 2, font: { size: 12, face: "ui-sans-serif" } },
-        edges: { width: 2, color: { opacity: 0.8 } },
+        edges: { width: 2, color: { opacity: 0.8 }, font: { size: 11, align: 'middle', strokeWidth: 3 } },
         groups: {
           self: { color: { background: BGP_COLORS.self, border: BGP_COLORS.selfBorder }, size: 28, font: { color: BGP_COLORS.self, size: 14, bold: true } },
           tier1: { color: { background: BGP_COLORS.tier1, border: BGP_COLORS.tier1Border }, size: 18 },
