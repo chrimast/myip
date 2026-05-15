@@ -247,6 +247,7 @@ class IPAPIIsLookupProvider:
             latitude=_first_float(data.get("latitude"), data.get("lat")),
             longitude=_first_float(data.get("longitude"), data.get("lon")),
             provider="ipwho.is",
+            network_type=_first_string(_string(connection, "type"), _string(connection, "connection_type")),
             is_proxy=_bool_any(security, "proxy", "is_proxy"),
             is_vpn=_bool_any(security, "vpn", "is_vpn"),
             is_tor=_bool_any(security, "tor", "is_tor"),
@@ -328,6 +329,7 @@ class IPAPIIsLookupProvider:
             longitude=longitude,
             asn_domain=_first_string(_string(asn, "domain"), _string(data, "asn_domain")),
             provider="ipinfo.io",
+            network_type=_first_string(_string(asn, "type"), _string(data, "network_type")),
         )
 
     def _lookup_ipdata(self, ip: str) -> IPInfo:
@@ -354,6 +356,7 @@ class IPAPIIsLookupProvider:
             longitude=_first_float(data.get("longitude"), data.get("lon")),
             asn_domain=_string(asn, "domain") or None,
             provider="ipdata.co",
+            network_type=_first_string(_string(asn, "type"), _string(data, "network_type"), _string(data, "usage_type")),
             is_proxy=_bool_any(threat, "is_proxy", "is_anonymous", "is_icloud") or _bool_any(data, "is_proxy", "is_anonymous", "is_icloud"),
             is_vpn=_bool_any(threat, "is_vpn") or _bool_any(data, "is_vpn"),
             is_tor=_bool_any(threat, "is_tor") or _bool_any(data, "is_tor"),

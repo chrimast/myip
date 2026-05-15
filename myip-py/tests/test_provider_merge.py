@@ -147,7 +147,7 @@ def test_provider_maps_extra_ipdata_threat_flags(monkeypatch):
                     "country_name": "United States",
                     "country_code": "US",
                     "city": "Mountain View",
-                    "asn": {"asn": "15169", "name": "Google LLC", "domain": "google.com"},
+                    "asn": {"asn": "15169", "name": "Google LLC", "domain": "google.com", "type": "hosting"},
                     "threat": {
                         "is_vpn": True,
                         "is_datacenter": True,
@@ -163,9 +163,111 @@ def test_provider_maps_extra_ipdata_threat_flags(monkeypatch):
 
     assert "https://api.ipdata.co/8.8.8.8" in calls
     assert result.provider == "ipdata.co"
+    assert result.network_type == "hosting"
     assert result.is_vpn is True
     assert result.is_hosting is True
     assert result.is_abuser is True
+
+
+def test_provider_maps_network_type_from_ipapi_is_company_and_asn_types(monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        assert url == "https://api.ipapi.is"
+        return FakeResponse(
+            {
+                "ip": "8.8.8.8",
+                "location": {"country": {"name": "United States", "code": "US"}, "city": "Mountain View"},
+                "asn": {"asn": 15169, "org": "Google LLC", "type": "business"},
+                "company": {"name": "Google LLC", "type": "isp"},
+            }
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("8.8.8.8")
+
+    assert result.network_type == "isp"
+    assert result.field_sources["network_type"] == "ipapi.is"
+
+
+def test_provider_maps_network_type_from_ipwho_connection_type(monkeypatch):
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        calls.append(url)
+        if url == "https://api.ipapi.is":
+            return FakeResponse({"ip": "8.8.8.8", "asn": {"asn": 15169}})
+        if url == "https://ipwho.is/8.8.8.8":
+            return FakeResponse(
+                {
+                    "success": True,
+                    "ip": "8.8.8.8",
+                    "country": "United States",
+                    "country_code": "US",
+                    "city": "Mountain View",
+                    "connection": {"asn": 15169, "isp": "Google LLC", "type": "business"},
+                }
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("8.8.8.8")
+
+    assert "https://ipwho.is/8.8.8.8" in calls
+    assert result.network_type == "business"
+    assert result.field_sources["network_type"] == "ipwho.is"
+
+
+def test_provider_maps_network_type_from_ipinfo_asn_type(monkeypatch):
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        calls.append(url)
+        if url == "https://api.ipapi.is":
+            return FakeResponse({"ip": "8.8.8.8", "location": {"country": {"name": "United States", "code": "US"}, "city": "Mountain View"}, "asn": {"asn": 15169, "org": "Google LLC"}})
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse({"ip": "8.8.8.8", "country": "US", "org": "AS15169 Google LLC", "asn": {"asn": "AS15169", "domain": "google.com", "type": "hosting"}})
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse({"ip": "8.8.8.8", "asn": {"asn": "15169", "name": "Google LLC", "domain": "google.com"}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("8.8.8.8")
+
+    assert calls == ["https://api.ipapi.is", "https://ipinfo.io/8.8.8.8/json", "https://api.ipdata.co/8.8.8.8"]
+    assert result.network_type == "hosting"
+    assert result.field_sources["network_type"] == "ipinfo.io"
 
 
 def test_provider_maps_registry_and_registration_region_from_ipapi_is(monkeypatch):
