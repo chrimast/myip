@@ -7,14 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import get_settings
+from app.services.admin_config import read_provider_config
 from app.services.http_delivery import json_response_with_etag
+from app.services.configured_ip_lookup import apply_field_overrides, configured_ip_lookup_provider
 from app.services.ip_lookup import (
     IPInfo,
+    IPAPIIsLookupProvider,
     IPLookupProvider,
     IPLookupResponse,
     IPLookupUnavailable,
     enrich_ip_intelligence,
-    get_ip_lookup_provider,
 )
 from app.services.local_ip import local_ip_info
 from app.services.rate_limit import RateLimiter
@@ -152,10 +154,16 @@ def _with_resolution_metadata(
     )
 
 
+def get_public_ip_lookup_provider() -> IPLookupProvider:
+    if read_provider_config()["exists"]:
+        return configured_ip_lookup_provider()
+    return IPAPIIsLookupProvider()
+
+
 @router.get("/ip", response_model=None)
 def lookup_ip(
     request: Request,
-    provider: IPLookupProvider = Depends(get_ip_lookup_provider),
+    provider: IPLookupProvider = Depends(get_public_ip_lookup_provider),
 ) -> Response:
     try:
         resolution = resolve_target(_raw_target_from_query(request.url.query, request))
@@ -201,6 +209,7 @@ def lookup_ip(
         ) from exc
 
     result = _apply_registry_lookup(result, target_ip)
+    result, _disabled_fields = apply_field_overrides(result)
     result = enrich_ip_intelligence(result)
     _ip_lookup_cache.set(target_ip, result)
     return json_response_with_etag(

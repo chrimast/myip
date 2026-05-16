@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app.api.ip import clear_ip_lookup_cache
+from app.api.ip import clear_ip_lookup_cache, get_public_ip_lookup_provider
 from app.main import app
-from app.services.ip_lookup import IPInfo, StaticIPLookupProvider, get_ip_lookup_provider
+from app.services.ip_lookup import IPInfo, StaticIPLookupProvider
 
 
 def setup_function() -> None:
@@ -11,7 +11,7 @@ def setup_function() -> None:
 
 
 def test_lookup_response_exposes_frontend_display_fields_for_original_homepage():
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: StaticIPLookupProvider(
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: StaticIPLookupProvider(
         IPInfo(
             ip="8.8.8.8",
             country="United States",
@@ -57,7 +57,7 @@ def test_lookup_response_exposes_frontend_display_fields_for_original_homepage()
 
 
 def test_lookup_response_exposes_go_compatible_legacy_field_aliases():
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: StaticIPLookupProvider(
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: StaticIPLookupProvider(
         IPInfo(
             ip="8.8.8.8",
             country="United States",

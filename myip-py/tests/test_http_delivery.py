@@ -92,7 +92,7 @@ def test_api_ip_sets_etag_and_returns_304(monkeypatch):
             return IPInfo(ip=ip, country="United States", country_code="US", provider="test-provider")
 
     ip_module.clear_ip_lookup_cache()
-    app.dependency_overrides[ip_module.get_ip_lookup_provider] = lambda: StaticProvider()
+    app.dependency_overrides[ip_module.get_public_ip_lookup_provider] = lambda: StaticProvider()
     try:
         client = TestClient(app)
         first = client.get("/api/ip?8.8.8.8")

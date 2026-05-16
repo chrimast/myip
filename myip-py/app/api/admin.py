@@ -11,10 +11,14 @@ from app.services.admin_config import (
     reset_provider_config,
     write_provider_config,
 )
+from app.services.configured_ip_lookup import (
+    apply_field_overrides,
+    default_provider_factory,
+    enabled_provider_config,
+    lookup_with_config,
+)
 from app.services.ip_lookup import (
     IPInfo,
-    IPAPIIsLookupProvider,
-    IPLookupProvider,
     IPLookupUnavailable,
     enrich_ip_intelligence,
     _network_category,
@@ -55,30 +59,7 @@ def reset_saved_provider_config() -> dict:
 
 
 def admin_ip_lookup_provider():
-    return _provider_for_admin_config
-
-
-def _provider_for_admin_config(provider_id: str, timeout_seconds: float | None) -> IPLookupProvider:
-    provider = IPAPIIsLookupProvider()
-    provider.settings.myip_provider_timeout_seconds = timeout_seconds or provider.settings.myip_provider_timeout_seconds
-    lookup_name = {
-        "ipapi.is": "_lookup_ipapi_is",
-        "ipwho.is": "_lookup_ipwho",
-        "ip-api.com": "_lookup_ip_api_com",
-        "ipapi.org": "_lookup_ipapi_org",
-        "ipinfo.io": "_lookup_ipinfo",
-        "ipdata.co": "_lookup_ipdata",
-    }[provider_id]
-    return _SingleMethodProvider(provider, lookup_name)
-
-
-class _SingleMethodProvider:
-    def __init__(self, provider: IPAPIIsLookupProvider, lookup_name: str) -> None:
-        self.provider = provider
-        self.lookup_name = lookup_name
-
-    def lookup(self, ip: str) -> IPInfo:
-        return getattr(self.provider, self.lookup_name)(ip)
+    return default_provider_factory
 
 
 @router.get("/lookup")
@@ -93,31 +74,20 @@ def lookup(
     except DNSResolutionError as exc:
         raise HTTPException(status_code=502, detail="DNS resolvers are temporarily unavailable") from exc
 
-    attempts: list[dict] = []
-    enabled_providers = _enabled_provider_config()
-    last_error: Exception | None = None
-    for provider_config in enabled_providers:
-        provider_id = provider_config["id"]
-        timeout_seconds = provider_config.get("timeout_seconds")
-        try:
-            provider = provider_factory(provider_id, timeout_seconds)
-            result = provider.lookup(resolution.selected_ip)
-            attempts.append({"provider": provider_id, "status": "ok", "timeout_seconds": timeout_seconds})
-            filtered_result, disabled_fields = _apply_field_overrides(result)
-            enriched = enrich_ip_intelligence(filtered_result)
-            return _admin_lookup_payload(target, resolution, enriched, enabled_providers, attempts, disabled_fields)
-        except IPLookupUnavailable as exc:
-            last_error = exc
-            attempts.append(
-                {
-                    "provider": provider_id,
-                    "status": "error",
-                    "timeout_seconds": timeout_seconds,
-                    "error": str(exc),
-                }
-            )
-
-    raise HTTPException(status_code=502, detail="IP lookup providers are temporarily unavailable") from last_error
+    try:
+        lookup_result = lookup_with_config(resolution.selected_ip, provider_factory)
+        filtered_result, disabled_fields = apply_field_overrides(lookup_result.result)
+        enriched = enrich_ip_intelligence(filtered_result)
+        return _admin_lookup_payload(
+            target,
+            resolution,
+            enriched,
+            lookup_result.provider_config,
+            lookup_result.attempts,
+            disabled_fields,
+        )
+    except IPLookupUnavailable as exc:
+        raise HTTPException(status_code=502, detail="IP lookup providers are temporarily unavailable") from exc
 
 
 def _admin_lookup_payload(
@@ -146,51 +116,3 @@ def _admin_lookup_payload(
             "disabled_fields": disabled_fields,
         },
     }
-
-
-def _enabled_provider_config() -> list[dict]:
-    definitions = {provider["id"]: provider for provider in PROVIDER_DEFINITIONS}
-    configured = []
-    for provider in read_provider_config()["providers"]:
-        if not provider.get("enabled", True):
-            continue
-        provider_id = provider["id"]
-        if provider_id not in definitions:
-            continue
-        configured.append(
-            {
-                "id": provider_id,
-                "order": provider["order"],
-                "timeout_seconds": provider.get("timeout_seconds"),
-                "role": definitions[provider_id]["role"],
-            }
-        )
-    return sorted(configured, key=lambda item: (item["order"], item["id"]))
-
-
-def _apply_field_overrides(info: IPInfo) -> tuple[IPInfo, list[str]]:
-    disabled_fields = _disabled_fields()
-    if not disabled_fields:
-        return info, []
-
-    payload = info.model_dump()
-    for field in disabled_fields:
-        if field not in payload:
-            continue
-        value = payload[field]
-        payload[field] = False if isinstance(value, bool) else None
-
-    filtered = IPInfo(**payload)
-    filtered.field_sources = {
-        field: source for field, source in info.field_sources.items() if field not in disabled_fields
-    }
-    return filtered, disabled_fields
-
-
-def _disabled_fields() -> list[str]:
-    field_overrides = read_provider_config().get("field_overrides", {})
-    return sorted(
-        field
-        for field, override in field_overrides.items()
-        if isinstance(override, dict) and override.get("enabled") is False
-    )

@@ -3,7 +3,7 @@ import httpx
 import socket
 
 import app.api.ip as ip_api
-from app.api.ip import clear_ip_lookup_cache
+from app.api.ip import clear_ip_lookup_cache, get_public_ip_lookup_provider
 from app.main import app
 from app.services.ip_lookup import (
     IPAPIIsLookupProvider,
@@ -21,7 +21,7 @@ def setup_function() -> None:
 
 
 def test_lookup_explicit_ip_returns_normalized_provider_result():
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: StaticIPLookupProvider(
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: StaticIPLookupProvider(
         IPInfo(
             ip="8.8.8.8",
             country="United States",
@@ -102,12 +102,105 @@ def test_lookup_explicit_ip_returns_normalized_provider_result():
         app.dependency_overrides.clear()
 
 
+def test_lookup_uses_saved_admin_provider_order_when_config_exists(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ipapi.is", "enabled": False, "order": 99},
+                {"id": "ipwho.is", "enabled": False, "order": 99},
+                {"id": "ip-api.com", "enabled": True, "order": 1, "timeout_seconds": 1.5},
+                {"id": "ipapi.org", "enabled": False, "order": 99},
+                {"id": "ipinfo.io", "enabled": False, "order": 99},
+                {"id": "ipdata.co", "enabled": False, "order": 99},
+            ]
+        },
+    )
+    calls: list[tuple[str, dict[str, str] | None, float]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "status": "success",
+                "query": "8.8.8.8",
+                "country": "United States",
+                "countryCode": "US",
+                "regionName": "California",
+                "city": "Mountain View",
+                "lat": 37.4056,
+                "lon": -122.0775,
+                "isp": "Google LLC",
+                "org": "Google LLC",
+                "as": "AS15169 Google LLC",
+                "mobile": False,
+                "proxy": False,
+                "hosting": True,
+            }
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        calls.append((url, params, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    response = client.get("/api/ip?8.8.8.8")
+
+    assert response.status_code == 200
+    assert calls == [
+        (
+            "http://ip-api.com/json/8.8.8.8",
+            {"fields": "status,message,query,country,countryCode,regionName,city,lat,lon,isp,org,as,mobile,proxy,hosting"},
+            1.5,
+        )
+    ]
+    assert response.json()["provider"] == "ip-api.com"
+    assert response.json()["hosting"] is True
+
+
+def test_lookup_applies_saved_admin_field_overrides_when_config_exists(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={"field_overrides": {"network_type": {"enabled": False}, "is_hosting": {"enabled": False}}},
+    )
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: StaticIPLookupProvider(
+        IPInfo(
+            ip="8.8.8.8",
+            country="United States",
+            country_code="US",
+            provider="test-provider",
+            network_type="hosting",
+            is_hosting=True,
+        )
+    )
+    try:
+        response = client.get("/api/ip?8.8.8.8")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["network_type"] is None
+    assert body["is_hosting"] is False
+    assert body["hosting"] is False
+    assert body["ip_property"] == "家庭IP"
+    assert body["risk_breakdown"] == {"base": 10}
+
+
 def test_lookup_supports_raw_ip_query_without_equals_sign():
     class EchoProvider:
         def lookup(self, ip: str) -> IPInfo:
             return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, client=("203.0.113.9", 54321))
 
@@ -120,7 +213,7 @@ def test_lookup_supports_raw_ip_query_without_equals_sign():
 
 
 def test_lookup_without_ip_uses_request_client_host():
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: StaticIPLookupProvider(
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: StaticIPLookupProvider(
         IPInfo(ip="203.0.113.9", country="Exampleland", provider="test-provider")
     )
     try:
@@ -145,7 +238,7 @@ def test_lookup_without_ip_prefers_forwarded_headers_and_falls_back_to_server_pu
             calls.append(ip)
             return IPInfo(ip=ip, country="Exampleland", provider="test-provider")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, client=("127.0.0.1", 54321))
 
@@ -193,7 +286,7 @@ def test_lookup_domain_response_includes_resolution_metadata(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
     monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeDNSResponse())
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -232,7 +325,7 @@ def test_lookup_resolves_keyless_domain_before_calling_provider(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
     monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeDNSResponse())
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -265,7 +358,7 @@ def test_lookup_resolves_raw_domain_without_equals_before_calling_provider(monke
 
     monkeypatch.setattr(socket, "getaddrinfo", fail_getaddrinfo)
     monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: FakeDNSResponse())
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -304,7 +397,7 @@ def test_lookup_rejects_keyless_equals_query_before_calling_provider():
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for removed keyless-equals query")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FailingProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -321,7 +414,7 @@ def test_lookup_rejects_invalid_keyless_queries_before_calling_provider():
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for invalid IP")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FailingProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -339,7 +432,7 @@ def test_lookup_rejects_invalid_raw_ip_query_before_calling_provider():
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for invalid raw IP")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FailingProvider()
     try:
         client = TestClient(app, client=("203.0.113.9", 54321), raise_server_exceptions=False)
 
@@ -356,7 +449,7 @@ def test_lookup_private_ip_returns_local_result_without_calling_provider():
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for private IP")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FailingProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -427,7 +520,7 @@ def test_lookup_ipv6_local_ips_return_local_result_without_calling_provider():
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for local IPv6")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FailingProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -447,7 +540,7 @@ def test_lookup_ipv4_link_local_returns_local_result_without_calling_provider():
         def lookup(self, ip: str) -> IPInfo:
             raise AssertionError("provider should not be called for IPv4 link-local")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FailingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FailingProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -1213,7 +1306,7 @@ def test_lookup_caches_same_ip_result_and_does_not_call_provider_twice():
             calls += 1
             return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: CountingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: CountingProvider()
     try:
         client = TestClient(app)
 
@@ -1243,7 +1336,7 @@ def test_lookup_refreshes_cache_after_ttl_expires(monkeypatch):
 
     monkeypatch.setattr(ip_api, "IP_LOOKUP_CACHE_TTL_SECONDS", 10)
     monkeypatch.setattr(ip_api.time, "monotonic", fake_monotonic)
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: CountingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: CountingProvider()
     try:
         client = TestClient(app)
 
@@ -1275,7 +1368,7 @@ def test_lookup_does_not_cache_provider_failure():
                 raise IPLookupUnavailable("temporary outage")
             return IPInfo(ip=ip, country="United States", provider="test-provider")
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: FlakyProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: FlakyProvider()
     try:
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -1302,7 +1395,7 @@ def test_lookup_rate_limits_same_client_after_configured_limit(monkeypatch):
 
     monkeypatch.setattr(ip_api, "IP_LOOKUP_RATE_LIMIT_PER_MINUTE", 2, raising=False)
     monkeypatch.setattr(ip_api.time, "monotonic", fake_monotonic)
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: CountingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: CountingProvider()
     try:
         client = TestClient(app, client=("198.51.100.88", 54321))
 
@@ -1330,7 +1423,7 @@ def test_lookup_rate_limit_window_expiry_allows_requests_again(monkeypatch):
 
     monkeypatch.setattr(ip_api, "IP_LOOKUP_RATE_LIMIT_PER_MINUTE", 2, raising=False)
     monkeypatch.setattr(ip_api.time, "monotonic", fake_monotonic)
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: CountingProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: CountingProvider()
     try:
         client = TestClient(app, client=("198.51.100.89", 54321))
 
@@ -1362,7 +1455,7 @@ def test_lookup_response_includes_registry_and_registration_region():
                 reg_region="US",
             )
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app)
 
@@ -1389,7 +1482,7 @@ def test_lookup_response_includes_asn_and_org_domains():
                 org_domain="google.com",
             )
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: EchoProvider()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: EchoProvider()
     try:
         client = TestClient(app)
 
@@ -1429,7 +1522,7 @@ def test_lookup_prefers_independent_registry_lookup_for_registration_fields(monk
             assert ip == "8.8.8.8"
             return FakeRegistryResult()
 
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: ProviderWithWrongProviderRegistry()
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: ProviderWithWrongProviderRegistry()
     monkeypatch.setattr(ip_api, "get_registry_lookup_client", lambda: FakeRegistryClient())
     clear_ip_lookup_cache()
     try:

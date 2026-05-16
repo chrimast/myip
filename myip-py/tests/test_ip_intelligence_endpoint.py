@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app.api.ip import clear_ip_lookup_cache
+from app.api.ip import clear_ip_lookup_cache, get_public_ip_lookup_provider
 from app.main import app
-from app.services.ip_lookup import IPInfo, get_ip_lookup_provider
+from app.services.ip_lookup import IPInfo
 
 
 def setup_function() -> None:
@@ -19,7 +19,7 @@ class StaticProvider:
 
 
 def test_lookup_response_exposes_intelligence_fields_for_proxy_datacenter():
-    app.dependency_overrides[get_ip_lookup_provider] = lambda: StaticProvider(
+    app.dependency_overrides[get_public_ip_lookup_provider] = lambda: StaticProvider(
         IPInfo(
             ip="8.8.8.8",
             isp="Example Cloud Hosting LLC",
