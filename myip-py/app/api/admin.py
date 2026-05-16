@@ -103,8 +103,9 @@ def lookup(
             provider = provider_factory(provider_id, timeout_seconds)
             result = provider.lookup(resolution.selected_ip)
             attempts.append({"provider": provider_id, "status": "ok", "timeout_seconds": timeout_seconds})
-            enriched = enrich_ip_intelligence(result)
-            return _admin_lookup_payload(target, resolution, enriched, enabled_providers, attempts)
+            filtered_result, disabled_fields = _apply_field_overrides(result)
+            enriched = enrich_ip_intelligence(filtered_result)
+            return _admin_lookup_payload(target, resolution, enriched, enabled_providers, attempts, disabled_fields)
         except IPLookupUnavailable as exc:
             last_error = exc
             attempts.append(
@@ -119,7 +120,14 @@ def lookup(
     raise HTTPException(status_code=502, detail="IP lookup providers are temporarily unavailable") from last_error
 
 
-def _admin_lookup_payload(target: str, resolution, info: IPInfo, provider_config: list[dict], attempts: list[dict]) -> dict:
+def _admin_lookup_payload(
+    target: str,
+    resolution,
+    info: IPInfo,
+    provider_config: list[dict],
+    attempts: list[dict],
+    disabled_fields: list[str],
+) -> dict:
     return {
         "input": target,
         "resolved_ip": resolution.selected_ip,
@@ -135,6 +143,7 @@ def _admin_lookup_payload(target: str, resolution, info: IPInfo, provider_config
             "humanbot_breakdown": info.humanbot_breakdown,
             "provider_config": provider_config,
             "provider_attempts": attempts,
+            "disabled_fields": disabled_fields,
         },
     }
 
@@ -157,3 +166,31 @@ def _enabled_provider_config() -> list[dict]:
             }
         )
     return sorted(configured, key=lambda item: (item["order"], item["id"]))
+
+
+def _apply_field_overrides(info: IPInfo) -> tuple[IPInfo, list[str]]:
+    disabled_fields = _disabled_fields()
+    if not disabled_fields:
+        return info, []
+
+    payload = info.model_dump()
+    for field in disabled_fields:
+        if field not in payload:
+            continue
+        value = payload[field]
+        payload[field] = False if isinstance(value, bool) else None
+
+    filtered = IPInfo(**payload)
+    filtered.field_sources = {
+        field: source for field, source in info.field_sources.items() if field not in disabled_fields
+    }
+    return filtered, disabled_fields
+
+
+def _disabled_fields() -> list[str]:
+    field_overrides = read_provider_config().get("field_overrides", {})
+    return sorted(
+        field
+        for field, override in field_overrides.items()
+        if isinstance(override, dict) and override.get("enabled") is False
+    )

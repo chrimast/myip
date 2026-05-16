@@ -153,6 +153,91 @@ def test_admin_lookup_api_returns_enriched_result_and_field_sources():
     assert body["debug"]["network_category"] == "hosting"
     assert body["debug"]["risk_breakdown"]["hosting"] == 20
     assert body["debug"]["provider"] == "test-provider"
+    assert body["debug"]["disabled_fields"] == []
+
+
+def test_admin_lookup_applies_disabled_field_overrides(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [{"id": "ipapi.is", "enabled": True, "order": 1}],
+            "field_overrides": {
+                "network_type": {"enabled": False},
+                "is_hosting": {"enabled": False},
+                "asn_owner": {"enabled": False},
+            },
+        },
+    )
+
+    def fake_provider(_provider_id: str, _timeout_seconds: float | None) -> StaticIPLookupProvider:
+        return StaticIPLookupProvider(
+            IPInfo(
+                ip="8.8.8.8",
+                provider="test-provider",
+                network_type="hosting",
+                asn_owner="Google LLC",
+                is_hosting=True,
+                field_sources={
+                    "network_type": "test-provider",
+                    "is_hosting": "test-provider",
+                    "asn_owner": "test-provider",
+                },
+            )
+        )
+
+    app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider
+    try:
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"]["network_type"] is None
+    assert body["result"]["asn_owner"] is None
+    assert body["result"]["is_hosting"] is False
+    assert "network_type" not in body["field_sources"]
+    assert "is_hosting" not in body["field_sources"]
+    assert "asn_owner" not in body["field_sources"]
+    assert body["debug"]["disabled_fields"] == ["asn_owner", "is_hosting", "network_type"]
+    assert body["debug"]["network_category"] == "unknown"
+
+
+def test_admin_lookup_keeps_enabled_field_overrides(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={"field_overrides": {"network_type": {"enabled": True}, "is_hosting": {"enabled": True}}},
+    )
+
+    def fake_provider(_provider_id: str, _timeout_seconds: float | None) -> StaticIPLookupProvider:
+        return StaticIPLookupProvider(
+            IPInfo(
+                ip="8.8.8.8",
+                provider="test-provider",
+                network_type="hosting",
+                is_hosting=True,
+                field_sources={"network_type": "test-provider", "is_hosting": "test-provider"},
+            )
+        )
+
+    app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider
+    try:
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"]["network_type"] == "hosting"
+    assert body["result"]["is_hosting"] is True
+    assert body["field_sources"]["network_type"] == "test-provider"
+    assert body["debug"]["disabled_fields"] == []
 
 
 def test_admin_lookup_api_rejects_invalid_target():
