@@ -86,14 +86,23 @@
     <section>
       <h2>自定义 Provider</h2>
       <div class="card">
-        <p class="small">当前阶段只保存元数据和字段映射，不会向自定义 Provider 发起 HTTP 请求。</p>
+        <p class="small">当前阶段可保存元数据和字段映射，也可以测试自定义 Provider 返回 JSON 的字段提取预览；不会影响公开 <code>/api/ip</code>。</p>
         <form id="custom-provider-form">
           <input id="custom-provider-id" placeholder="provider id，例如 example-provider">
           <input id="custom-provider-name" placeholder="显示名称">
           <input id="custom-provider-endpoint" placeholder="https://api.example.com/{ip}">
           <input id="custom-provider-provides" placeholder="字段，逗号分隔，例如 country,fraud_score">
+          <input id="custom-provider-field-paths" placeholder="字段路径 JSON，例如 {&quot;country&quot;:[&quot;location.country&quot;]}">
+          <input id="custom-provider-transforms" placeholder="转换 JSON，可选，例如 {&quot;asn&quot;:&quot;asn_int&quot;}">
           <button type="submit">新增 Provider</button>
         </form>
+        <h3>测试自定义 Provider</h3>
+        <form id="custom-provider-preview-form">
+          <input id="custom-provider-preview-ip" placeholder="测试 IP，例如 8.8.8.8">
+          <input id="custom-provider-preview-id" placeholder="provider id；留空使用上方表单">
+          <button type="submit">测试自定义 Provider</button>
+        </form>
+        <pre id="custom-provider-preview-json">尚未测试</pre>
         <div id="custom-provider-list" style="margin-top:12px"></div>
       </div>
     </section>
@@ -138,12 +147,29 @@
       providerConfig: '/api/admin/provider-config',
       configStatus: '/api/admin/config-status',
       customProviders: '/api/admin/custom-providers',
+      customProviderPreview: '/api/admin/custom-providers/preview',
       customFields: '/api/admin/custom-fields'
     };
     function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
     function pills(items) { return (items || []).map(item => `<span class="pill">${esc(item)}</span>`).join(''); }
     function providerMap(map) {
       return Object.entries(map || {}).map(([provider, paths]) => `<div><strong>${esc(provider)}</strong>: ${pills(paths)}</div>`).join('') || '<span class="muted">无</span>';
+    }
+    function parseJsonInput(id, fallback) {
+      const value = document.getElementById(id).value.trim();
+      if (!value) return fallback;
+      return JSON.parse(value);
+    }
+    function collectCustomProviderForm(providerIdOverride) {
+      const provides = document.getElementById('custom-provider-provides').value.split(',').map(item => item.trim()).filter(Boolean);
+      return {
+        id: providerIdOverride || document.getElementById('custom-provider-id').value.trim(),
+        name: document.getElementById('custom-provider-name').value.trim(),
+        endpoint: document.getElementById('custom-provider-endpoint').value.trim(),
+        provides,
+        field_paths: parseJsonInput('custom-provider-field-paths', {}),
+        transforms: parseJsonInput('custom-provider-transforms', {})
+      };
     }
     function renderConfigStatus(status) {
       document.getElementById('config-status').innerHTML = `
@@ -173,11 +199,22 @@
     }
     function renderCustomMetadata(config) {
       document.getElementById('custom-provider-list').innerHTML = (config.custom_providers || [])
-        .map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`)
+        .map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <button type="button" data-load-custom-provider="${esc(provider.id)}">载入</button> <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`)
         .join('') || '<span class="muted">暂无自定义 Provider</span>';
       document.getElementById('custom-field-list').innerHTML = (config.custom_fields || [])
         .map(field => `<span class="pill"><strong>${esc(field.field)}</strong> ${esc(field.label)} · ${esc(field.type)} <button type="button" data-delete-custom-field="${esc(field.field)}">删除</button></span>`)
         .join('') || '<span class="muted">暂无自定义字段</span>';
+      document.querySelectorAll('[data-load-custom-provider]').forEach(button => button.addEventListener('click', () => {
+        const provider = (config.custom_providers || []).find(item => item.id === button.dataset.loadCustomProvider);
+        if (!provider) return;
+        document.getElementById('custom-provider-id').value = provider.id;
+        document.getElementById('custom-provider-name').value = provider.name;
+        document.getElementById('custom-provider-endpoint').value = provider.endpoint;
+        document.getElementById('custom-provider-provides').value = (provider.provides || []).join(',');
+        document.getElementById('custom-provider-field-paths').value = JSON.stringify(provider.field_paths || {});
+        document.getElementById('custom-provider-transforms').value = JSON.stringify(provider.transforms || {});
+        document.getElementById('custom-provider-preview-id').value = provider.id;
+      }));
       document.querySelectorAll('[data-delete-custom-provider]').forEach(button => button.addEventListener('click', async () => {
         const response = await fetch(`${endpoints.customProviders}/${encodeURIComponent(button.dataset.deleteCustomProvider)}`, {method:'DELETE'});
         if (!response.ok) throw new Error(`删除 Provider 失败 ${response.status}`);
@@ -283,16 +320,21 @@
       });
       document.getElementById('custom-provider-form').addEventListener('submit', async event => {
         event.preventDefault();
-        const provides = document.getElementById('custom-provider-provides').value.split(',').map(item => item.trim()).filter(Boolean);
-        const response = await fetch(endpoints.customProviders, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
-          id: document.getElementById('custom-provider-id').value.trim(),
-          name: document.getElementById('custom-provider-name').value.trim(),
-          endpoint: document.getElementById('custom-provider-endpoint').value.trim(),
-          provides
-        })});
+        const response = await fetch(endpoints.customProviders, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(collectCustomProviderForm())});
         if (!response.ok) throw new Error(`新增 Provider 失败 ${response.status}`);
         renderProviderConfig(await response.json());
         await reloadCatalogs();
+      });
+      document.getElementById('custom-provider-preview-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const providerId = document.getElementById('custom-provider-preview-id').value.trim();
+        const response = await fetch(endpoints.customProviderPreview, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
+          ip: document.getElementById('custom-provider-preview-ip').value.trim(),
+          provider: collectCustomProviderForm(providerId || undefined)
+        })});
+        const body = await response.json();
+        document.getElementById('custom-provider-preview-json').textContent = JSON.stringify(body, null, 2);
+        if (!response.ok) throw new Error(`测试 Provider 失败 ${response.status}`);
       });
       document.getElementById('custom-field-form').addEventListener('submit', async event => {
         event.preventDefault();

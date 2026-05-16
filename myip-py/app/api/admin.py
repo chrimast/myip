@@ -15,6 +15,7 @@ from app.services.admin_config import (
     reset_provider_config,
     write_provider_config,
 )
+from app.services.custom_provider_preview import preview_custom_provider
 from app.services.configured_ip_lookup import (
     apply_field_overrides,
     default_provider_factory,
@@ -60,6 +61,11 @@ def save_provider_config(payload: dict) -> dict:
 @router.post("/custom-providers")
 def create_custom_provider(payload: dict) -> dict:
     return add_custom_provider(payload)
+
+
+@router.post("/custom-providers/preview")
+def custom_provider_preview(payload: dict) -> dict:
+    return preview_custom_provider(payload)
 
 
 @router.delete("/custom-providers/{provider_id}")

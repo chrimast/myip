@@ -1,3 +1,4 @@
+import respx
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -33,6 +34,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "自定义字段" in body
     assert "/api/admin/custom-providers" in body
     assert "/api/admin/custom-fields" in body
+    assert "测试自定义 Provider" in body
+    assert "/api/admin/custom-providers/preview" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -356,6 +359,145 @@ def test_admin_lookup_returns_502_when_all_enabled_providers_fail(tmp_path, monk
         app.dependency_overrides.clear()
 
     assert response.status_code == 502
+
+
+def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields():
+    client = TestClient(app)
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("https://api.example.com/ip/8.8.8.8").respond(
+            200,
+            json={
+                "location": {"country": "United States"},
+                "asn": {"number": "AS15169", "name": "Google LLC"},
+                "security": {"proxy": "true"},
+                "risk": {"score": "42"},
+            },
+        )
+        response = client.post(
+            "/api/admin/custom-providers/preview",
+            json={
+                "ip": "8.8.8.8",
+                "provider": {
+                    "id": "example-provider",
+                    "name": "Example Provider",
+                    "endpoint": "https://api.example.com/ip/{ip}",
+                    "provides": ["country", "asn", "asn_owner", "is_proxy", "fraud_score"],
+                    "field_paths": {
+                        "country": ["location.country"],
+                        "asn": ["asn.number"],
+                        "asn_owner": ["asn.name"],
+                        "is_proxy": ["security.proxy"],
+                        "fraud_score": ["risk.score"],
+                    },
+                    "transforms": {"asn": "asn_int", "is_proxy": "bool", "fraud_score": "int"},
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider_id"] == "example-provider"
+    assert body["url"] == "https://api.example.com/ip/8.8.8.8"
+    assert body["normalized"] == {
+        "country": "United States",
+        "asn": 15169,
+        "asn_owner": "Google LLC",
+        "is_proxy": True,
+        "fraud_score": 42,
+    }
+    assert body["raw"]["asn"]["name"] == "Google LLC"
+
+
+def test_admin_custom_provider_preview_uses_first_available_path_and_reports_missing():
+    client = TestClient(app)
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("https://api.example.com/8.8.4.4").respond(200, json={"company": {"name": "Example ISP"}})
+        response = client.post(
+            "/api/admin/custom-providers/preview",
+            json={
+                "ip": "8.8.4.4",
+                "provider": {
+                    "id": "example-provider",
+                    "name": "Example Provider",
+                    "endpoint": "https://api.example.com/{ip}",
+                    "provides": ["org", "country"],
+                    "field_paths": {"org": ["organization.name", "company.name"], "country": ["location.country"]},
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["normalized"] == {"org": "Example ISP"}
+    assert body["missing_fields"] == ["country"]
+    assert body["field_sources"] == {"org": "company.name"}
+
+
+def test_admin_custom_provider_preview_rejects_plain_http_endpoint():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/admin/custom-providers/preview",
+        json={
+            "ip": "8.8.8.8",
+            "provider": {"id": "bad-provider", "name": "Bad", "endpoint": "http://api.example.com/{ip}", "provides": []},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "https" in response.json()["detail"].lower()
+
+
+def test_admin_custom_provider_preview_blocks_private_and_metadata_hosts():
+    client = TestClient(app)
+
+    for endpoint in ["https://127.0.0.1/{ip}", "https://10.0.0.1/{ip}", "https://169.254.169.254/{ip}"]:
+        response = client.post(
+            "/api/admin/custom-providers/preview",
+            json={
+                "ip": "8.8.8.8",
+                "provider": {"id": "bad-provider", "name": "Bad", "endpoint": endpoint, "provides": []},
+            },
+        )
+        assert response.status_code == 422
+        assert "unsafe" in response.json()["detail"].lower()
+
+
+def test_admin_custom_provider_preview_rejects_unknown_transform():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/admin/custom-providers/preview",
+        json={
+            "ip": "8.8.8.8",
+            "provider": {
+                "id": "example-provider",
+                "name": "Example Provider",
+                "endpoint": "https://api.example.com/{ip}",
+                "provides": ["country"],
+                "field_paths": {"country": ["country"]},
+                "transforms": {"country": "eval"},
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_custom_provider_preview_requires_valid_ip():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/admin/custom-providers/preview",
+        json={
+            "ip": "not an ip",
+            "provider": {"id": "example-provider", "name": "Example", "endpoint": "https://api.example.com/{ip}", "provides": []},
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_admin_custom_provider_api_persists_metadata_and_merges_provider_list(tmp_path, monkeypatch):

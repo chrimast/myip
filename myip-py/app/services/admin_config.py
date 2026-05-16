@@ -574,6 +574,7 @@ def _normalize_custom_provider(payload: Any) -> dict[str, Any]:
         "key_name": payload.get("key_name"),
         "provides": provides,
         "field_paths": _field_path_map(payload.get("field_paths", {}), provides),
+        "transforms": _transform_map(payload.get("transforms", {}), provides),
         "custom": True,
     }
 
@@ -636,10 +637,24 @@ def _field_path_map(value: Any, provides: list[str]) -> dict[str, list[str]]:
     return mapping
 
 
+def _transform_map(value: Any, provides: list[str]) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="transforms must be an object")
+    mapping = {str(field): str(transform) for field, transform in value.items()}
+    unknown = set(mapping) - set(provides)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"transforms contains fields not listed in provides: {sorted(unknown)}")
+    return mapping
+
+
 def _providers_map(value: Any) -> dict[str, list[str]]:
     if not isinstance(value, dict):
         raise HTTPException(status_code=422, detail="mapping must be an object")
     return {str(key): _string_list(paths, "paths") for key, paths in value.items()}
+
+
+def normalize_custom_provider_preview(payload: Any) -> dict[str, Any]:
+    return _normalize_custom_provider(payload)
 
 
 def _positive_int(value: Any, field: str) -> int:
