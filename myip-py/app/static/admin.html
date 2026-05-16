@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider 管理 - myip-py</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0f172a; --panel:#111827; --card:#1f2937; --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:32px 24px 20px; border-bottom:1px solid #243244; background:linear-gradient(135deg,#0f172a,#111827); }
+    h1 { margin:0 0 8px; font-size:30px; }
+    h2 { margin:0 0 16px; font-size:20px; }
+    p { color:var(--muted); line-height:1.6; }
+    main { max-width:1180px; margin:0 auto; padding:24px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+    .card { background:var(--card); border:1px solid #334155; border-radius:14px; padding:18px; box-shadow:0 16px 40px rgba(0,0,0,.18); }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:999px; font-size:12px; background:#172554; color:#bfdbfe; margin:2px 4px 2px 0; }
+    .ok { color:var(--ok); } .warn { color:var(--warn); }
+    code { color:#bae6fd; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; vertical-align:top; padding:10px; border-bottom:1px solid #334155; }
+    th { color:#cbd5e1; }
+    section { margin-bottom:24px; }
+    .muted { color:var(--muted); }
+    .small { font-size:12px; }
+    .error { color:#fecaca; background:#7f1d1d; padding:12px; border-radius:10px; display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Provider 管理</h1>
+    <p>统一查看 myip-py 的 Provider、字段管理、运行配置和结构化评分信号。当前版本为只读后台，不展示密钥明文。</p>
+    <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code></p>
+  </header>
+  <main>
+    <div id="error" class="error"></div>
+
+    <section>
+      <h2>运行配置</h2>
+      <div id="settings" class="grid"></div>
+    </section>
+
+    <section>
+      <h2>Provider 列表</h2>
+      <div id="providers" class="grid"></div>
+    </section>
+
+    <section>
+      <h2>字段管理</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>字段</th><th>来源类型</th><th>参与评分</th><th>用途</th><th>Provider 映射</th></tr>
+          </thead>
+          <tbody id="fields"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    const endpoints = {
+      settings: '/api/admin/settings',
+      providers: '/api/admin/providers',
+      fields: '/api/admin/fields'
+    };
+    function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+    function pills(items) { return (items || []).map(item => `<span class="pill">${esc(item)}</span>`).join(''); }
+    function providerMap(map) {
+      return Object.entries(map || {}).map(([provider, paths]) => `<div><strong>${esc(provider)}</strong>: ${pills(paths)}</div>`).join('') || '<span class="muted">无</span>';
+    }
+    async function loadJson(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${url} ${response.status}`);
+      return response.json();
+    }
+    async function boot() {
+      const [settings, providers, fields] = await Promise.all([
+        loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields)
+      ]);
+      document.getElementById('settings').innerHTML = `
+        <div class="card"><h2>Config</h2>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}</div>
+        <div class="card"><h2>Keys</h2>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}</div>
+      `;
+      document.getElementById('providers').innerHTML = providers.map(provider => `
+        <div class="card">
+          <h2>${esc(provider.order)}. ${esc(provider.id)}</h2>
+          <p><span class="pill">${esc(provider.role)}</span><span class="pill">${esc(provider.fallback_phase)}</span></p>
+          <p class="muted">${esc(provider.endpoint)}</p>
+          <p>Key: <code>${esc(provider.key_name || 'none')}</code> · <span class="${provider.key_configured ? 'ok' : 'warn'}">${provider.key_configured ? '已配置' : '未配置/无需'}</span></p>
+          <p class="small">字段：${pills(provider.provides)}</p>
+        </div>
+      `).join('');
+      document.getElementById('fields').innerHTML = fields.map(field => `
+        <tr>
+          <td><strong>${esc(field.field)}</strong><br><span class="muted">${esc(field.label)}</span></td>
+          <td>${esc(field.source_type)}</td>
+          <td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td>
+          <td>${pills(field.used_for)}</td>
+          <td>${providerMap(field.providers)}</td>
+        </tr>
+      `).join('');
+    }
+    boot().catch(error => {
+      const node = document.getElementById('error');
+      node.style.display = 'block';
+      node.textContent = `后台数据加载失败：${error.message}`;
+    });
+  </script>
+</body>
+</html>
