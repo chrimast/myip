@@ -395,16 +395,22 @@ def admin_settings(settings: Settings) -> dict[str, Any]:
 
 def admin_providers(settings: Settings) -> list[dict[str, Any]]:
     key_status = settings.key_status()
+    saved_config = read_provider_config()
+    config_by_id = {provider["id"]: provider for provider in saved_config["providers"]}
     timeout = settings.myip_provider_timeout_seconds
     providers: list[dict[str, Any]] = []
     for index, definition in enumerate(PROVIDER_DEFINITIONS, start=1):
         provider = dict(definition)
         key_name = provider["key_name"]
-        provider["order"] = index
-        provider["timeout_seconds"] = timeout
+        override = config_by_id.get(provider["id"], {})
+        provider["order"] = override.get("order", index)
+        provider["enabled"] = override.get("enabled", provider["enabled"])
+        provider["timeout_seconds"] = override.get("timeout_seconds") or timeout
+        provider["timeout_override_seconds"] = override.get("timeout_seconds")
+        provider["config_source"] = "json" if saved_config["exists"] else "default"
         provider["key_configured"] = bool(key_name and key_status[key_name]["configured"])
         providers.append(provider)
-    return providers
+    return sorted(providers, key=lambda item: (item["order"], item["id"]))
 
 
 def admin_fields() -> list[dict[str, Any]]:

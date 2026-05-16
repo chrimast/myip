@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.api.admin import admin_ip_lookup_provider
-from app.services.ip_lookup import IPInfo, StaticIPLookupProvider
+from app.services.ip_lookup import IPInfo, IPLookupUnavailable, StaticIPLookupProvider
 
 
 def test_admin_page_serves_provider_management_shell():
@@ -70,6 +70,25 @@ def test_admin_providers_api_describes_provider_order_keys_and_fields():
     assert "is_hosting" in ip_api["provides"]
 
 
+def test_admin_providers_api_includes_effective_provider_config(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={"providers": [{"id": "ipwho.is", "enabled": False, "order": 1, "timeout_seconds": 2.5}]},
+    )
+
+    response = client.get("/api/admin/providers")
+
+    assert response.status_code == 200
+    ipwho = next(provider for provider in response.json() if provider["id"] == "ipwho.is")
+    assert ipwho["enabled"] is False
+    assert ipwho["order"] == 1
+    assert ipwho["timeout_seconds"] == 2.5
+    assert ipwho["config_source"] == "json"
+
+
 def test_admin_fields_api_marks_scoring_and_display_only_fields():
     client = TestClient(app)
 
@@ -91,7 +110,7 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
 
 
 def test_admin_lookup_api_returns_enriched_result_and_field_sources():
-    def fake_provider() -> StaticIPLookupProvider:
+    def fake_provider(_provider_id: str, _timeout_seconds: float | None) -> StaticIPLookupProvider:
         return StaticIPLookupProvider(
             IPInfo(
                 ip="8.8.8.8",
@@ -114,7 +133,7 @@ def test_admin_lookup_api_returns_enriched_result_and_field_sources():
             )
         )
 
-    app.dependency_overrides[admin_ip_lookup_provider] = fake_provider
+    app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider
     client = TestClient(app)
 
     try:
@@ -142,6 +161,105 @@ def test_admin_lookup_api_rejects_invalid_target():
     response = client.get("/api/admin/lookup", params={"target": "=bad"})
 
     assert response.status_code == 422
+
+
+def test_admin_lookup_uses_enabled_provider_order_from_config(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ipapi.is", "enabled": False, "order": 1},
+                {"id": "ipwho.is", "enabled": True, "order": 2},
+                {"id": "ip-api.com", "enabled": True, "order": 1, "timeout_seconds": 1.5},
+            ]
+        },
+    )
+    calls: list[str] = []
+
+    def fake_provider_factory(provider_id: str, timeout_seconds: float | None):
+        calls.append(f"{provider_id}:{timeout_seconds}")
+        if provider_id == "ip-api.com":
+            return StaticIPLookupProvider(IPInfo(ip="8.8.8.8", provider="ip-api.com", network_type="business"))
+        raise AssertionError(f"unexpected provider {provider_id}")
+
+    app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider_factory
+    try:
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["debug"]["provider_config"][0]["id"] == "ip-api.com"
+    assert body["debug"]["provider_config"][0]["timeout_seconds"] == 1.5
+    assert body["debug"]["provider_config"][1]["id"] == "ipwho.is"
+    assert body["debug"]["provider_attempts"] == [
+        {"provider": "ip-api.com", "status": "ok", "timeout_seconds": 1.5}
+    ]
+    assert calls == ["ip-api.com:1.5"]
+    assert body["result"]["provider"] == "ip-api.com"
+
+
+def test_admin_lookup_falls_back_to_next_enabled_provider(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ipapi.is", "enabled": False, "order": 99},
+                {"id": "ip-api.com", "enabled": False, "order": 99},
+                {"id": "ipapi.org", "enabled": False, "order": 99},
+                {"id": "ipinfo.io", "enabled": False, "order": 99},
+                {"id": "ipwho.is", "enabled": True, "order": 1},
+                {"id": "ipdata.co", "enabled": True, "order": 2},
+            ]
+        },
+    )
+    calls: list[str] = []
+
+    def fake_provider_factory(provider_id: str, timeout_seconds: float | None):
+        calls.append(provider_id)
+        if provider_id == "ipwho.is":
+            raise IPLookupUnavailable("first provider failed")
+        return StaticIPLookupProvider(IPInfo(ip="8.8.8.8", provider=provider_id, is_hosting=True))
+
+    app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider_factory
+    try:
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert calls == ["ipwho.is", "ipdata.co"]
+    assert body["debug"]["provider_attempts"] == [
+        {"provider": "ipwho.is", "status": "error", "timeout_seconds": None, "error": "first provider failed"},
+        {"provider": "ipdata.co", "status": "ok", "timeout_seconds": None},
+    ]
+    assert body["result"]["provider"] == "ipdata.co"
+
+
+def test_admin_lookup_returns_502_when_all_enabled_providers_fail(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put("/api/admin/provider-config", json={"providers": [{"id": "ipapi.is", "enabled": True, "order": 1}]})
+
+    def fake_provider_factory(provider_id: str, timeout_seconds: float | None):
+        raise IPLookupUnavailable("provider down")
+
+    app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider_factory
+    try:
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 502
 
 
 def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path, monkeypatch):
