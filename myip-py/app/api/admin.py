@@ -58,6 +58,19 @@ def reset_saved_provider_config() -> dict:
     return reset_provider_config()
 
 
+@router.get("/config-status")
+def config_status() -> dict:
+    config = read_provider_config()
+    uses_admin_config = bool(config["exists"])
+    return {
+        "public_lookup_mode": "admin-config-chain" if uses_admin_config else "default-production-chain",
+        "uses_admin_provider_config": uses_admin_config,
+        "provider_config_exists": uses_admin_config,
+        "storage_path": config["storage_path"],
+        "warning": "保存的后台 Provider 配置正在影响公开 /api/ip" if uses_admin_config else None,
+    }
+
+
 def admin_ip_lookup_provider():
     return default_provider_factory
 

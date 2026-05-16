@@ -34,10 +34,15 @@
   <header>
     <h1>Provider 管理</h1>
     <p>统一查看 myip-py 的 Provider、字段管理、运行配置和结构化评分信号。当前版本为只读后台，不展示密钥明文。</p>
-    <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code></p>
+    <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code> · <code>/api/admin/config-status</code></p>
   </header>
   <main>
     <div id="error" class="error"></div>
+
+    <section>
+      <h2>公开接口模式</h2>
+      <div id="config-status" class="card">加载中</div>
+    </section>
 
     <section>
       <h2>运行配置</h2>
@@ -67,13 +72,13 @@
     <section>
       <h2>Provider 配置</h2>
       <div class="card">
-        <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。不会保存或展示 API key 明文。</p>
+        <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。不会保存或展示 API key 明文。</p>
         <div id="provider-config"></div>
         <h2 style="margin-top:18px">字段开关</h2>
         <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
         <div id="field-config"></div>
         <button id="save-provider-config" type="button">保存配置</button>
-        <button id="reset-provider-config" type="button">重置配置</button>
+        <button id="reset-provider-config" type="button">恢复默认生产链</button>
         <pre id="provider-config-json">加载中</pre>
       </div>
     </section>
@@ -101,12 +106,24 @@
       providers: '/api/admin/providers',
       fields: '/api/admin/fields',
       lookup: '/api/admin/lookup',
-      providerConfig: '/api/admin/provider-config'
+      providerConfig: '/api/admin/provider-config',
+      configStatus: '/api/admin/config-status'
     };
     function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
     function pills(items) { return (items || []).map(item => `<span class="pill">${esc(item)}</span>`).join(''); }
     function providerMap(map) {
       return Object.entries(map || {}).map(([provider, paths]) => `<div><strong>${esc(provider)}</strong>: ${pills(paths)}</div>`).join('') || '<span class="muted">无</span>';
+    }
+    function renderConfigStatus(status) {
+      document.getElementById('config-status').innerHTML = `
+        <p><strong>公开接口模式</strong>: <span class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(status.public_lookup_mode)}</span></p>
+        <p>配置文件: <code>${esc(status.storage_path)}</code></p>
+        <p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p>
+        ${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}
+      `;
+    }
+    async function refreshConfigStatus() {
+      renderConfigStatus(await loadJson(endpoints.configStatus));
     }
     function renderLookup(data) {
       document.getElementById('lookup-summary').innerHTML = `
@@ -167,9 +184,10 @@
       return response.json();
     }
     async function boot() {
-      const [settings, providers, fields] = await Promise.all([
-        loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields)
+      const [settings, providers, fields, status] = await Promise.all([
+        loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields), loadJson(endpoints.configStatus)
       ]);
+      renderConfigStatus(status);
       window.adminFields = fields;
       document.getElementById('settings').innerHTML = `
         <div class="card"><h2>Config</h2>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}</div>
@@ -203,11 +221,13 @@
         const response = await fetch(endpoints.providerConfig, {method:'PUT', headers:{'content-type':'application/json'}, body: JSON.stringify(collectProviderConfig())});
         if (!response.ok) throw new Error(`保存失败 ${response.status}`);
         renderProviderConfig(await response.json());
+        await refreshConfigStatus();
       });
       document.getElementById('reset-provider-config').addEventListener('click', async () => {
         const response = await fetch(`${endpoints.providerConfig}/reset`, {method:'POST'});
         if (!response.ok) throw new Error(`重置失败 ${response.status}`);
         renderProviderConfig(await response.json());
+        await refreshConfigStatus();
       });
       loadProviderConfig().catch(error => {
         document.getElementById('provider-config-json').textContent = `配置加载失败：${error.message}`;

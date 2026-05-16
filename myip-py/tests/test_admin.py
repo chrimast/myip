@@ -26,6 +26,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-enabled" in body
     assert "Provider 调用链" in body
     assert "禁用字段" in body
+    assert "公开接口模式" in body
+    assert "/api/admin/config-status" in body
+    assert "恢复默认生产链" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -412,6 +415,37 @@ def test_admin_provider_config_api_rejects_unknown_provider(tmp_path, monkeypatc
 
     assert response.status_code == 422
 
+
+def test_admin_config_status_reports_default_public_lookup_mode(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    response = client.get("/api/admin/config-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["public_lookup_mode"] == "default-production-chain"
+    assert body["uses_admin_provider_config"] is False
+    assert body["provider_config_exists"] is False
+    assert body["storage_path"] == str(config_path)
+    assert body["warning"] is None
+
+
+def test_admin_config_status_reports_admin_config_public_lookup_mode(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put("/api/admin/provider-config", json={"providers": [{"id": "ip-api.com", "enabled": True, "order": 1}]})
+
+    response = client.get("/api/admin/config-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["public_lookup_mode"] == "admin-config-chain"
+    assert body["uses_admin_provider_config"] is True
+    assert body["provider_config_exists"] is True
+    assert body["warning"] == "保存的后台 Provider 配置正在影响公开 /api/ip"
 
 def test_admin_provider_config_reset_removes_saved_file(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
