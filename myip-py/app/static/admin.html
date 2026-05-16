@@ -53,6 +53,10 @@
           <button type="submit">查询</button>
         </form>
         <div id="lookup-summary" class="grid" style="margin-top:16px"></div>
+        <h2 style="margin-top:18px">Provider 调用链</h2>
+        <div id="lookup-attempts"></div>
+        <h2 style="margin-top:18px">禁用字段</h2>
+        <div id="lookup-disabled-fields"></div>
         <h2 style="margin-top:18px">字段来源</h2>
         <div id="lookup-sources"></div>
         <h2 style="margin-top:18px">原始调试 JSON</h2>
@@ -65,6 +69,9 @@
       <div class="card">
         <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。不会保存或展示 API key 明文。</p>
         <div id="provider-config"></div>
+        <h2 style="margin-top:18px">字段开关</h2>
+        <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
+        <div id="field-config"></div>
         <button id="save-provider-config" type="button">保存配置</button>
         <button id="reset-provider-config" type="button">重置配置</button>
         <pre id="provider-config-json">加载中</pre>
@@ -111,14 +118,23 @@
       `;
       document.getElementById('lookup-sources').innerHTML = Object.entries(data.field_sources || {})
         .map(([field, provider]) => `<span class="pill"><strong>${esc(field)}</strong>: ${esc(provider)}</span>`).join('') || '<span class="muted">无字段来源</span>';
+      document.getElementById('lookup-attempts').innerHTML = (data.debug.provider_attempts || [])
+        .map(attempt => `<span class="pill"><strong>${esc(attempt.provider)}</strong>: ${esc(attempt.status)} · timeout=${esc(attempt.timeout_seconds ?? '默认')}${attempt.error ? ` · ${esc(attempt.error)}` : ''}</span>`).join('') || '<span class="muted">尚无调用记录</span>';
+      document.getElementById('lookup-disabled-fields').innerHTML = pills(data.debug.disabled_fields || []) || '<span class="muted">无禁用字段</span>';
       document.getElementById('lookup-json').textContent = JSON.stringify(data, null, 2);
     }
     function renderProviderConfig(config) {
+      const fieldOverrides = config.field_overrides || {};
       document.getElementById('provider-config').innerHTML = (config.providers || []).map(provider => `
         <label class="pill"><input type="checkbox" data-provider-enabled="${esc(provider.id)}" ${provider.enabled ? 'checked' : ''}> ${esc(provider.id)}</label>
         <label class="pill">顺序 <input style="width:70px;padding:4px" type="number" min="1" data-provider-order="${esc(provider.id)}" value="${esc(provider.order)}"></label>
         <label class="pill">超时 <input style="width:90px;padding:4px" type="number" min="0" step="0.1" data-provider-timeout="${esc(provider.id)}" value="${esc(provider.timeout_seconds ?? '')}"></label><br>
       `).join('');
+      document.getElementById('field-config').innerHTML = (window.adminFields || []).map(field => {
+        const override = fieldOverrides[field.field] || {};
+        const enabled = override.enabled !== false;
+        return `<label class="pill" title="${esc(field.label)}"><input type="checkbox" data-field-enabled="${esc(field.field)}" ${enabled ? 'checked' : ''}> ${esc(field.field)}${field.scoring ? ' · 评分' : ''}</label>`;
+      }).join('') || '<span class="muted">字段元数据尚未加载</span>';
       document.getElementById('provider-config-json').textContent = JSON.stringify(config, null, 2);
     }
     function collectProviderConfig() {
@@ -132,7 +148,11 @@
           timeout_seconds: timeout === '' ? null : Number(timeout)
         };
       });
-      return { providers, field_overrides: {} };
+      const field_overrides = Object.fromEntries([...document.querySelectorAll('[data-field-enabled]')].map(input => [
+        input.dataset.fieldEnabled,
+        { enabled: input.checked }
+      ]));
+      return { providers, field_overrides };
     }
     async function loadProviderConfig() {
       renderProviderConfig(await loadJson(endpoints.providerConfig));
@@ -150,6 +170,7 @@
       const [settings, providers, fields] = await Promise.all([
         loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields)
       ]);
+      window.adminFields = fields;
       document.getElementById('settings').innerHTML = `
         <div class="card"><h2>Config</h2>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}</div>
         <div class="card"><h2>Keys</h2>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}</div>

@@ -22,6 +22,10 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/lookup" in body
     assert "Provider 配置" in body
     assert "/api/admin/provider-config" in body
+    assert "字段开关" in body
+    assert "data-field-enabled" in body
+    assert "Provider 调用链" in body
+    assert "禁用字段" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
