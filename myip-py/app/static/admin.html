@@ -25,13 +25,16 @@
     .muted { color:var(--muted); }
     .small { font-size:12px; }
     .error { color:#fecaca; background:#7f1d1d; padding:12px; border-radius:10px; display:none; }
+    input { width:min(420px,100%); padding:11px 12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:var(--text); }
+    button { padding:11px 16px; border:0; border-radius:10px; background:var(--accent); color:#082f49; font-weight:700; cursor:pointer; }
+    pre { overflow:auto; background:#020617; border:1px solid #334155; border-radius:12px; padding:14px; }
   </style>
 </head>
 <body>
   <header>
     <h1>Provider 管理</h1>
     <p>统一查看 myip-py 的 Provider、字段管理、运行配置和结构化评分信号。当前版本为只读后台，不展示密钥明文。</p>
-    <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code></p>
+    <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code></p>
   </header>
   <main>
     <div id="error" class="error"></div>
@@ -39,6 +42,22 @@
     <section>
       <h2>运行配置</h2>
       <div id="settings" class="grid"></div>
+    </section>
+
+    <section>
+      <h2>查询调试</h2>
+      <div class="card">
+        <p>输入 IP、域名或 URL，查看后台查询结果、字段来源、内部枚举和评分拆解。</p>
+        <form id="lookup-form">
+          <input id="lookup-target" name="target" value="8.8.8.8" autocomplete="off" placeholder="8.8.8.8 或 example.com">
+          <button type="submit">查询</button>
+        </form>
+        <div id="lookup-summary" class="grid" style="margin-top:16px"></div>
+        <h2 style="margin-top:18px">字段来源</h2>
+        <div id="lookup-sources"></div>
+        <h2 style="margin-top:18px">原始调试 JSON</h2>
+        <pre id="lookup-json">尚未查询</pre>
+      </div>
     </section>
 
     <section>
@@ -62,12 +81,29 @@
     const endpoints = {
       settings: '/api/admin/settings',
       providers: '/api/admin/providers',
-      fields: '/api/admin/fields'
+      fields: '/api/admin/fields',
+      lookup: '/api/admin/lookup'
     };
     function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
     function pills(items) { return (items || []).map(item => `<span class="pill">${esc(item)}</span>`).join(''); }
     function providerMap(map) {
       return Object.entries(map || {}).map(([provider, paths]) => `<div><strong>${esc(provider)}</strong>: ${pills(paths)}</div>`).join('') || '<span class="muted">无</span>';
+    }
+    function renderLookup(data) {
+      document.getElementById('lookup-summary').innerHTML = `
+        <div class="card"><strong>目标</strong><p>${esc(data.input)} → <code>${esc(data.resolved_ip)}</code></p></div>
+        <div class="card"><strong>Provider</strong><p>${esc(data.debug.provider)}</p></div>
+        <div class="card"><strong>内部枚举</strong><p>${esc(data.debug.network_category)}</p></div>
+        <div class="card"><strong>IP 属性/来源</strong><p>${esc(data.result.ip_property)} · ${esc(data.result.ip_source)}</p></div>
+        <div class="card"><strong>风险</strong><p>${esc(data.result.risk_score)} / 100</p></div>
+      `;
+      document.getElementById('lookup-sources').innerHTML = Object.entries(data.field_sources || {})
+        .map(([field, provider]) => `<span class="pill"><strong>${esc(field)}</strong>: ${esc(provider)}</span>`).join('') || '<span class="muted">无字段来源</span>';
+      document.getElementById('lookup-json').textContent = JSON.stringify(data, null, 2);
+    }
+    async function runLookup(target) {
+      const data = await loadJson(`${endpoints.lookup}?target=${encodeURIComponent(target)}`);
+      renderLookup(data);
     }
     async function loadJson(url) {
       const response = await fetch(url);
@@ -100,6 +136,12 @@
           <td>${providerMap(field.providers)}</td>
         </tr>
       `).join('');
+      document.getElementById('lookup-form').addEventListener('submit', event => {
+        event.preventDefault();
+        runLookup(document.getElementById('lookup-target').value.trim()).catch(error => {
+          document.getElementById('lookup-json').textContent = `查询失败：${error.message}`;
+        });
+      });
     }
     boot().catch(error => {
       const node = document.getElementById('error');

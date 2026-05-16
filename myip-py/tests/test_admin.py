@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.api.admin import admin_ip_lookup_provider
+from app.services.ip_lookup import IPInfo, StaticIPLookupProvider
 
 
 def test_admin_page_serves_provider_management_shell():
@@ -16,6 +18,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/settings" in body
     assert "/api/admin/providers" in body
     assert "/api/admin/fields" in body
+    assert "查询调试" in body
+    assert "/api/admin/lookup" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -82,3 +86,57 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["isp"]["source_type"] == "identity_text"
     assert fields["isp"]["used_for"] == ["display", "compatibility"]
     assert fields["is_hosting"]["scoring"] is True
+
+
+def test_admin_lookup_api_returns_enriched_result_and_field_sources():
+    def fake_provider() -> StaticIPLookupProvider:
+        return StaticIPLookupProvider(
+            IPInfo(
+                ip="8.8.8.8",
+                country="United States",
+                country_code="US",
+                city="Mountain View",
+                asn="AS15169",
+                asn_owner="Google LLC",
+                isp="Google LLC",
+                provider="test-provider",
+                network_type="hosting",
+                reg_region="US",
+                is_hosting=True,
+                field_sources={
+                    "ip": "test-provider",
+                    "network_type": "test-provider",
+                    "is_hosting": "test-provider",
+                    "reg_region": "test-registry",
+                },
+            )
+        )
+
+    app.dependency_overrides[admin_ip_lookup_provider] = fake_provider
+    client = TestClient(app)
+
+    try:
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["input"] == "8.8.8.8"
+    assert body["resolved_ip"] == "8.8.8.8"
+    assert body["result"]["ip"] == "8.8.8.8"
+    assert body["result"]["ip_property"] == "机房IP"
+    assert body["result"]["ip_source"] == "原生IP"
+    assert body["field_sources"]["network_type"] == "test-provider"
+    assert body["field_sources"]["is_hosting"] == "test-provider"
+    assert body["debug"]["network_category"] == "hosting"
+    assert body["debug"]["risk_breakdown"]["hosting"] == 20
+    assert body["debug"]["provider"] == "test-provider"
+
+
+def test_admin_lookup_api_rejects_invalid_target():
+    client = TestClient(app)
+
+    response = client.get("/api/admin/lookup", params={"target": "=bad"})
+
+    assert response.status_code == 422
