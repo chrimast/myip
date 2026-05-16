@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
+
 from app.core.config import Settings
+
+PROVIDER_CONFIG_PATH = Path("data/admin_provider_config.json")
+CONFIG_VERSION = 1
 
 PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -402,3 +409,116 @@ def admin_providers(settings: Settings) -> list[dict[str, Any]]:
 
 def admin_fields() -> list[dict[str, Any]]:
     return FIELD_DEFINITIONS
+
+
+def default_provider_config() -> dict[str, Any]:
+    return {
+        "version": CONFIG_VERSION,
+        "providers": [
+            {
+                "id": provider["id"],
+                "enabled": bool(provider["enabled"]),
+                "order": index,
+                "timeout_seconds": None,
+            }
+            for index, provider in enumerate(PROVIDER_DEFINITIONS, start=1)
+        ],
+        "field_overrides": {},
+    }
+
+
+def read_provider_config() -> dict[str, Any]:
+    config = default_provider_config()
+    exists = PROVIDER_CONFIG_PATH.exists()
+    if exists:
+        raw = json.loads(PROVIDER_CONFIG_PATH.read_text(encoding="utf-8"))
+        config = _normalize_provider_config(raw)
+    config["storage_path"] = str(PROVIDER_CONFIG_PATH)
+    config["exists"] = exists
+    return config
+
+
+def write_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    config = _normalize_provider_config(payload)
+    PROVIDER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROVIDER_CONFIG_PATH.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return read_provider_config()
+
+
+def reset_provider_config() -> dict[str, Any]:
+    if PROVIDER_CONFIG_PATH.exists():
+        PROVIDER_CONFIG_PATH.unlink()
+    return read_provider_config()
+
+
+def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    known_provider_ids = {provider["id"] for provider in PROVIDER_DEFINITIONS}
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS}
+    defaults_by_id = {provider["id"]: provider for provider in default_provider_config()["providers"]}
+
+    incoming_providers = payload.get("providers", [])
+    if not isinstance(incoming_providers, list):
+        raise HTTPException(status_code=422, detail="providers must be a list")
+
+    merged_providers = {provider_id: dict(defaults_by_id[provider_id]) for provider_id in defaults_by_id}
+    for provider in incoming_providers:
+        if not isinstance(provider, dict):
+            raise HTTPException(status_code=422, detail="provider override must be an object")
+        provider_id = provider.get("id")
+        if provider_id not in known_provider_ids:
+            raise HTTPException(status_code=422, detail=f"unknown provider: {provider_id}")
+        merged_providers[provider_id].update(
+            {
+                "id": provider_id,
+                "enabled": bool(provider.get("enabled", merged_providers[provider_id]["enabled"])),
+                "order": _positive_int(provider.get("order", merged_providers[provider_id]["order"]), "order"),
+                "timeout_seconds": _optional_positive_float(provider.get("timeout_seconds"), "timeout_seconds"),
+            }
+        )
+
+    field_overrides = payload.get("field_overrides", {}) or {}
+    if not isinstance(field_overrides, dict):
+        raise HTTPException(status_code=422, detail="field_overrides must be an object")
+    normalized_fields: dict[str, dict[str, bool]] = {}
+    for field, override in field_overrides.items():
+        if field not in known_fields:
+            raise HTTPException(status_code=422, detail=f"unknown field: {field}")
+        if not isinstance(override, dict):
+            raise HTTPException(status_code=422, detail="field override must be an object")
+        if "enabled" in override:
+            normalized_fields[field] = {"enabled": bool(override["enabled"])}
+
+    return {
+        "version": CONFIG_VERSION,
+        "providers": sorted(merged_providers.values(), key=lambda item: (item["order"], item["id"])),
+        "field_overrides": normalized_fields,
+    }
+
+
+def _positive_int(value: Any, field: str) -> int:
+    if isinstance(value, bool):
+        raise HTTPException(status_code=422, detail=f"{field} must be a positive integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"{field} must be a positive integer") from exc
+    if parsed < 1:
+        raise HTTPException(status_code=422, detail=f"{field} must be a positive integer")
+    return parsed
+
+
+def _optional_positive_float(value: Any, field: str) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise HTTPException(status_code=422, detail=f"{field} must be positive")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"{field} must be positive") from exc
+    if parsed <= 0:
+        raise HTTPException(status_code=422, detail=f"{field} must be positive")
+    return parsed

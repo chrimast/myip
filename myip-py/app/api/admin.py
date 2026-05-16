@@ -2,7 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import Settings, get_settings
-from app.services.admin_config import admin_fields, admin_providers, admin_settings
+from app.services.admin_config import (
+    admin_fields,
+    admin_providers,
+    admin_settings,
+    read_provider_config,
+    reset_provider_config,
+    write_provider_config,
+)
 from app.services.ip_lookup import (
     IPInfo,
     IPLookupProvider,
@@ -29,6 +36,21 @@ def providers(settings: Settings = Depends(get_settings)) -> list[dict]:
 @router.get("/fields")
 def fields() -> list[dict]:
     return admin_fields()
+
+
+@router.get("/provider-config")
+def provider_config() -> dict:
+    return read_provider_config()
+
+
+@router.put("/provider-config")
+def save_provider_config(payload: dict) -> dict:
+    return write_provider_config(payload)
+
+
+@router.post("/provider-config/reset")
+def reset_saved_provider_config() -> dict:
+    return reset_provider_config()
 
 
 def admin_ip_lookup_provider() -> IPLookupProvider:

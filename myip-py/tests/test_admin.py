@@ -20,6 +20,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/fields" in body
     assert "查询调试" in body
     assert "/api/admin/lookup" in body
+    assert "Provider 配置" in body
+    assert "/api/admin/provider-config" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -140,3 +142,79 @@ def test_admin_lookup_api_rejects_invalid_target():
     response = client.get("/api/admin/lookup", params={"target": "=bad"})
 
     assert response.status_code == 422
+
+
+def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    response = client.get("/api/admin/provider-config")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"] == 1
+    assert body["storage_path"] == str(config_path)
+    assert body["exists"] is False
+    assert [provider["id"] for provider in body["providers"]][:2] == ["ipapi.is", "ipwho.is"]
+    assert body["providers"][0]["enabled"] is True
+    assert body["providers"][0]["order"] == 1
+    assert body["providers"][0]["timeout_seconds"] is None
+    assert body["field_overrides"] == {}
+    assert not config_path.exists()
+
+
+def test_admin_provider_config_api_persists_safe_overrides(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    payload = {
+        "providers": [
+            {"id": "ipapi.is", "enabled": True, "order": 2, "timeout_seconds": 3.5},
+            {"id": "ipwho.is", "enabled": False, "order": 1, "timeout_seconds": None},
+        ],
+        "field_overrides": {
+            "network_type": {"enabled": True},
+            "is_crawler": {"enabled": False},
+        },
+    }
+
+    response = client.put("/api/admin/provider-config", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert config_path.exists()
+    ipwho = next(provider for provider in body["providers"] if provider["id"] == "ipwho.is")
+    ipapi = next(provider for provider in body["providers"] if provider["id"] == "ipapi.is")
+    assert ipwho["enabled"] is False
+    assert ipwho["order"] == 1
+    assert ipapi["order"] == 2
+    assert ipapi["timeout_seconds"] == 3.5
+    assert body["field_overrides"]["is_crawler"]["enabled"] is False
+    assert "key" not in config_path.read_text(encoding="utf-8").lower()
+
+
+def test_admin_provider_config_api_rejects_unknown_provider(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/admin/provider-config",
+        json={"providers": [{"id": "unknown", "enabled": True, "order": 1}]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_provider_config_reset_removes_saved_file(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    config_path.write_text('{"version": 1, "providers": []}', encoding="utf-8")
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    response = client.post("/api/admin/provider-config/reset")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is False
+    assert not config_path.exists()
