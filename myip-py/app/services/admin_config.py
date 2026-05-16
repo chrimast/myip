@@ -399,7 +399,7 @@ def admin_providers(settings: Settings) -> list[dict[str, Any]]:
     config_by_id = {provider["id"]: provider for provider in saved_config["providers"]}
     timeout = settings.myip_provider_timeout_seconds
     providers: list[dict[str, Any]] = []
-    for index, definition in enumerate(PROVIDER_DEFINITIONS, start=1):
+    for index, definition in enumerate([*PROVIDER_DEFINITIONS, *saved_config["custom_providers"]], start=1):
         provider = dict(definition)
         key_name = provider["key_name"]
         override = config_by_id.get(provider["id"], {})
@@ -408,13 +408,13 @@ def admin_providers(settings: Settings) -> list[dict[str, Any]]:
         provider["timeout_seconds"] = override.get("timeout_seconds") or timeout
         provider["timeout_override_seconds"] = override.get("timeout_seconds")
         provider["config_source"] = "json" if saved_config["exists"] else "default"
-        provider["key_configured"] = bool(key_name and key_status[key_name]["configured"])
+        provider["key_configured"] = bool(key_name and key_status.get(key_name, {}).get("configured"))
         providers.append(provider)
     return sorted(providers, key=lambda item: (item["order"], item["id"]))
 
 
 def admin_fields() -> list[dict[str, Any]]:
-    return FIELD_DEFINITIONS
+    return [*FIELD_DEFINITIONS, *read_provider_config()["custom_fields"]]
 
 
 def default_provider_config() -> dict[str, Any]:
@@ -430,6 +430,8 @@ def default_provider_config() -> dict[str, Any]:
             for index, provider in enumerate(PROVIDER_DEFINITIONS, start=1)
         ],
         "field_overrides": {},
+        "custom_providers": [],
+        "custom_fields": [],
     }
 
 
@@ -501,7 +503,143 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "version": CONFIG_VERSION,
         "providers": sorted(merged_providers.values(), key=lambda item: (item["order"], item["id"])),
         "field_overrides": normalized_fields,
+        "custom_providers": _normalize_custom_providers(payload.get("custom_providers", [])),
+        "custom_fields": _normalize_custom_fields(payload.get("custom_fields", [])),
     }
+
+
+def add_custom_provider(payload: dict[str, Any]) -> dict[str, Any]:
+    config = read_provider_config()
+    providers = [provider for provider in config["custom_providers"] if provider["id"] != payload.get("id")]
+    providers.append(_normalize_custom_provider(payload))
+    return write_provider_config({**_persistable_config(config), "custom_providers": providers})
+
+
+def delete_custom_provider(provider_id: str) -> dict[str, Any]:
+    config = read_provider_config()
+    providers = [provider for provider in config["custom_providers"] if provider["id"] != provider_id]
+    return write_provider_config({**_persistable_config(config), "custom_providers": providers})
+
+
+def add_custom_field(payload: dict[str, Any]) -> dict[str, Any]:
+    config = read_provider_config()
+    fields = [field for field in config["custom_fields"] if field["field"] != payload.get("field")]
+    fields.append(_normalize_custom_field(payload))
+    return write_provider_config({**_persistable_config(config), "custom_fields": fields})
+
+
+def delete_custom_field(field: str) -> dict[str, Any]:
+    config = read_provider_config()
+    fields = [item for item in config["custom_fields"] if item["field"] != field]
+    config["field_overrides"].pop(field, None)
+    return write_provider_config({**_persistable_config(config), "custom_fields": fields})
+
+
+def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "providers": config["providers"],
+        "field_overrides": config["field_overrides"],
+        "custom_providers": config["custom_providers"],
+        "custom_fields": config["custom_fields"],
+    }
+
+
+def _normalize_custom_providers(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise HTTPException(status_code=422, detail="custom_providers must be a list")
+    providers = [_normalize_custom_provider(provider) for provider in value]
+    ids = [provider["id"] for provider in providers]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=422, detail="duplicate custom provider id")
+    return sorted(providers, key=lambda provider: provider["id"])
+
+
+def _normalize_custom_provider(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="custom provider must be an object")
+    provider_id = _slug(payload.get("id"), "provider id")
+    if provider_id in {provider["id"] for provider in PROVIDER_DEFINITIONS}:
+        raise HTTPException(status_code=422, detail=f"custom provider conflicts with built-in provider: {provider_id}")
+    provides = _string_list(payload.get("provides", []), "provides")
+    return {
+        "id": provider_id,
+        "name": _non_empty_text(payload.get("name", provider_id), "name"),
+        "enabled": False,
+        "order": _positive_int(payload.get("order", len(PROVIDER_DEFINITIONS) + 100), "order"),
+        "timeout_seconds": _optional_positive_float(payload.get("timeout_seconds"), "timeout_seconds"),
+        "role": "custom metadata",
+        "fallback_phase": "custom",
+        "endpoint": _non_empty_text(payload.get("endpoint"), "endpoint"),
+        "requires_key": bool(payload.get("requires_key", False)),
+        "key_name": payload.get("key_name"),
+        "provides": provides,
+        "field_paths": _field_path_map(payload.get("field_paths", {}), provides),
+        "custom": True,
+    }
+
+
+def _normalize_custom_fields(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise HTTPException(status_code=422, detail="custom_fields must be a list")
+    fields = [_normalize_custom_field(field) for field in value]
+    names = [field["field"] for field in fields]
+    if len(names) != len(set(names)):
+        raise HTTPException(status_code=422, detail="duplicate custom field")
+    return sorted(fields, key=lambda field: field["field"])
+
+
+def _normalize_custom_field(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="custom field must be an object")
+    field = _slug(payload.get("field"), "field")
+    if field in {definition["field"] for definition in FIELD_DEFINITIONS}:
+        raise HTTPException(status_code=422, detail=f"custom field conflicts with built-in field: {field}")
+    field_type = payload.get("type", "string")
+    if field_type not in {"string", "bool", "int", "float", "list", "object"}:
+        raise HTTPException(status_code=422, detail="custom field type is invalid")
+    return {
+        "field": field,
+        "label": _non_empty_text(payload.get("label", field), "label"),
+        "type": field_type,
+        "source_type": payload.get("source_type", "custom"),
+        "scoring": False,
+        "used_for": _string_list(payload.get("used_for", ["display", "debug"]), "used_for"),
+        "providers": _providers_map(payload.get("providers", {})),
+        "custom": True,
+    }
+
+
+def _slug(value: Any, field: str) -> str:
+    text = _non_empty_text(value, field)
+    if not all(char.islower() or char.isdigit() or char in {"_", "-", "."} for char in text):
+        raise HTTPException(status_code=422, detail=f"{field} must use lowercase letters, numbers, dot, dash or underscore")
+    return text
+
+
+def _non_empty_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=422, detail=f"{field} must be a non-empty string")
+    return value.strip()
+
+
+def _string_list(value: Any, field: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise HTTPException(status_code=422, detail=f"{field} must be a list of strings")
+    return value
+
+
+def _field_path_map(value: Any, provides: list[str]) -> dict[str, list[str]]:
+    mapping = _providers_map(value)
+    unknown = set(mapping) - set(provides)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"field_paths contains fields not listed in provides: {sorted(unknown)}")
+    return mapping
+
+
+def _providers_map(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="mapping must be an object")
+    return {str(key): _string_list(paths, "paths") for key, paths in value.items()}
 
 
 def _positive_int(value: Any, field: str) -> int:

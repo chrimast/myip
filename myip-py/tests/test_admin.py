@@ -29,6 +29,10 @@ def test_admin_page_serves_provider_management_shell():
     assert "公开接口模式" in body
     assert "/api/admin/config-status" in body
     assert "恢复默认生产链" in body
+    assert "自定义 Provider" in body
+    assert "自定义字段" in body
+    assert "/api/admin/custom-providers" in body
+    assert "/api/admin/custom-fields" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -352,6 +356,113 @@ def test_admin_lookup_returns_502_when_all_enabled_providers_fail(tmp_path, monk
         app.dependency_overrides.clear()
 
     assert response.status_code == 502
+
+
+def test_admin_custom_provider_api_persists_metadata_and_merges_provider_list(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    payload = {
+        "id": "example-provider",
+        "name": "Example Provider",
+        "endpoint": "https://api.example.com/{ip}",
+        "provides": ["country", "fraud_score"],
+        "field_paths": {"country": ["location.country"], "fraud_score": ["risk.score"]},
+    }
+
+    response = client.post("/api/admin/custom-providers", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    custom = body["custom_providers"][0]
+    assert custom["id"] == "example-provider"
+    assert custom["enabled"] is False
+    assert custom["custom"] is True
+    assert custom["role"] == "custom metadata"
+    assert custom["field_paths"] == payload["field_paths"]
+
+    providers = client.get("/api/admin/providers").json()
+    example = next(provider for provider in providers if provider["id"] == "example-provider")
+    assert example["name"] == "Example Provider"
+    assert example["custom"] is True
+    assert example["enabled"] is False
+    assert "fraud_score" in example["provides"]
+
+
+def test_admin_custom_provider_delete_removes_metadata(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.post(
+        "/api/admin/custom-providers",
+        json={"id": "delete-me", "name": "Delete Me", "endpoint": "https://api.example.com/{ip}", "provides": []},
+    )
+
+    response = client.delete("/api/admin/custom-providers/delete-me")
+
+    assert response.status_code == 200
+    assert response.json()["custom_providers"] == []
+    assert all(provider["id"] != "delete-me" for provider in client.get("/api/admin/providers").json())
+
+
+def test_admin_custom_provider_api_rejects_builtin_conflict(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/admin/custom-providers",
+        json={"id": "ipapi.is", "name": "Conflict", "endpoint": "https://api.example.com/{ip}", "provides": []},
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_custom_field_api_persists_metadata_and_merges_field_list(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    payload = {
+        "field": "fraud_score",
+        "label": "欺诈评分",
+        "type": "int",
+        "source_type": "custom",
+        "used_for": ["display", "debug"],
+        "providers": {"example-provider": ["risk.score"]},
+    }
+
+    response = client.post("/api/admin/custom-fields", json=payload)
+
+    assert response.status_code == 200
+    custom = response.json()["custom_fields"][0]
+    assert custom["field"] == "fraud_score"
+    assert custom["scoring"] is False
+    assert custom["custom"] is True
+
+    fields = {field["field"]: field for field in client.get("/api/admin/fields").json()}
+    assert fields["fraud_score"]["label"] == "欺诈评分"
+    assert fields["fraud_score"]["providers"] == {"example-provider": ["risk.score"]}
+
+
+def test_admin_custom_field_delete_removes_metadata(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.post("/api/admin/custom-fields", json={"field": "delete_field", "label": "Delete field", "type": "string"})
+
+    response = client.delete("/api/admin/custom-fields/delete_field")
+
+    assert response.status_code == 200
+    assert response.json()["custom_fields"] == []
+    assert "delete_field" not in {field["field"] for field in client.get("/api/admin/fields").json()}
+
+
+def test_admin_custom_field_api_rejects_builtin_conflict(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
+    client = TestClient(app)
+
+    response = client.post("/api/admin/custom-fields", json={"field": "network_type", "label": "Conflict", "type": "string"})
+
+    assert response.status_code == 422
 
 
 def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path, monkeypatch):

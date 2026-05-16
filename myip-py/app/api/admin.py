@@ -3,9 +3,13 @@ from fastapi.exceptions import RequestValidationError
 
 from app.core.config import Settings, get_settings
 from app.services.admin_config import (
+    add_custom_field,
+    add_custom_provider,
     admin_fields,
     admin_providers,
     admin_settings,
+    delete_custom_field,
+    delete_custom_provider,
     PROVIDER_DEFINITIONS,
     read_provider_config,
     reset_provider_config,
@@ -51,6 +55,26 @@ def provider_config() -> dict:
 @router.put("/provider-config")
 def save_provider_config(payload: dict) -> dict:
     return write_provider_config(payload)
+
+
+@router.post("/custom-providers")
+def create_custom_provider(payload: dict) -> dict:
+    return add_custom_provider(payload)
+
+
+@router.delete("/custom-providers/{provider_id}")
+def remove_custom_provider(provider_id: str) -> dict:
+    return delete_custom_provider(provider_id)
+
+
+@router.post("/custom-fields")
+def create_custom_field(payload: dict) -> dict:
+    return add_custom_field(payload)
+
+
+@router.delete("/custom-fields/{field}")
+def remove_custom_field(field: str) -> dict:
+    return delete_custom_field(field)
 
 
 @router.post("/provider-config/reset")

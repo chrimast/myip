@@ -84,6 +84,35 @@
     </section>
 
     <section>
+      <h2>自定义 Provider</h2>
+      <div class="card">
+        <p class="small">当前阶段只保存元数据和字段映射，不会向自定义 Provider 发起 HTTP 请求。</p>
+        <form id="custom-provider-form">
+          <input id="custom-provider-id" placeholder="provider id，例如 example-provider">
+          <input id="custom-provider-name" placeholder="显示名称">
+          <input id="custom-provider-endpoint" placeholder="https://api.example.com/{ip}">
+          <input id="custom-provider-provides" placeholder="字段，逗号分隔，例如 country,fraud_score">
+          <button type="submit">新增 Provider</button>
+        </form>
+        <div id="custom-provider-list" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>自定义字段</h2>
+      <div class="card">
+        <p class="small">自定义字段默认不参与评分，只用于展示/调试；不同 Provider 的原始字段名后续通过映射配置。</p>
+        <form id="custom-field-form">
+          <input id="custom-field-name" placeholder="字段名，例如 fraud_score">
+          <input id="custom-field-label" placeholder="显示标签，例如 欺诈评分">
+          <input id="custom-field-type" placeholder="类型 string/bool/int/float/list/object" value="string">
+          <button type="submit">新增字段</button>
+        </form>
+        <div id="custom-field-list" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <section>
       <h2>Provider 列表</h2>
       <div id="providers" class="grid"></div>
     </section>
@@ -107,7 +136,9 @@
       fields: '/api/admin/fields',
       lookup: '/api/admin/lookup',
       providerConfig: '/api/admin/provider-config',
-      configStatus: '/api/admin/config-status'
+      configStatus: '/api/admin/config-status',
+      customProviders: '/api/admin/custom-providers',
+      customFields: '/api/admin/custom-fields'
     };
     function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
     function pills(items) { return (items || []).map(item => `<span class="pill">${esc(item)}</span>`).join(''); }
@@ -140,8 +171,29 @@
       document.getElementById('lookup-disabled-fields').innerHTML = pills(data.debug.disabled_fields || []) || '<span class="muted">无禁用字段</span>';
       document.getElementById('lookup-json').textContent = JSON.stringify(data, null, 2);
     }
+    function renderCustomMetadata(config) {
+      document.getElementById('custom-provider-list').innerHTML = (config.custom_providers || [])
+        .map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`)
+        .join('') || '<span class="muted">暂无自定义 Provider</span>';
+      document.getElementById('custom-field-list').innerHTML = (config.custom_fields || [])
+        .map(field => `<span class="pill"><strong>${esc(field.field)}</strong> ${esc(field.label)} · ${esc(field.type)} <button type="button" data-delete-custom-field="${esc(field.field)}">删除</button></span>`)
+        .join('') || '<span class="muted">暂无自定义字段</span>';
+      document.querySelectorAll('[data-delete-custom-provider]').forEach(button => button.addEventListener('click', async () => {
+        const response = await fetch(`${endpoints.customProviders}/${encodeURIComponent(button.dataset.deleteCustomProvider)}`, {method:'DELETE'});
+        if (!response.ok) throw new Error(`删除 Provider 失败 ${response.status}`);
+        renderProviderConfig(await response.json());
+        await reloadCatalogs();
+      }));
+      document.querySelectorAll('[data-delete-custom-field]').forEach(button => button.addEventListener('click', async () => {
+        const response = await fetch(`${endpoints.customFields}/${encodeURIComponent(button.dataset.deleteCustomField)}`, {method:'DELETE'});
+        if (!response.ok) throw new Error(`删除字段失败 ${response.status}`);
+        renderProviderConfig(await response.json());
+        await reloadCatalogs();
+      }));
+    }
     function renderProviderConfig(config) {
       const fieldOverrides = config.field_overrides || {};
+      renderCustomMetadata(config);
       document.getElementById('provider-config').innerHTML = (config.providers || []).map(provider => `
         <label class="pill"><input type="checkbox" data-provider-enabled="${esc(provider.id)}" ${provider.enabled ? 'checked' : ''}> ${esc(provider.id)}</label>
         <label class="pill">顺序 <input style="width:70px;padding:4px" type="number" min="1" data-provider-order="${esc(provider.id)}" value="${esc(provider.order)}"></label>
@@ -174,6 +226,34 @@
     async function loadProviderConfig() {
       renderProviderConfig(await loadJson(endpoints.providerConfig));
     }
+    async function reloadCatalogs() {
+      const [providers, fields] = await Promise.all([loadJson(endpoints.providers), loadJson(endpoints.fields)]);
+      window.adminFields = fields;
+      renderProviders(providers);
+      renderFields(fields);
+    }
+    function renderProviders(providers) {
+      document.getElementById('providers').innerHTML = providers.map(provider => `
+        <div class="card">
+          <h2>${esc(provider.order)}. ${esc(provider.id)}${provider.custom ? ' · 自定义' : ''}</h2>
+          <p><span class="pill">${esc(provider.role)}</span><span class="pill">${esc(provider.fallback_phase)}</span></p>
+          <p class="muted">${esc(provider.endpoint)}</p>
+          <p>Key: <code>${esc(provider.key_name || 'none')}</code> · <span class="${provider.key_configured ? 'ok' : 'warn'}">${provider.key_configured ? '已配置' : '未配置/无需'}</span></p>
+          <p class="small">字段：${pills(provider.provides)}</p>
+        </div>
+      `).join('');
+    }
+    function renderFields(fields) {
+      document.getElementById('fields').innerHTML = fields.map(field => `
+        <tr>
+          <td><strong>${esc(field.field)}</strong>${field.custom ? ' <span class="pill">自定义</span>' : ''}<br><span class="muted">${esc(field.label)}</span></td>
+          <td>${esc(field.source_type)}</td>
+          <td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td>
+          <td>${pills(field.used_for)}</td>
+          <td>${providerMap(field.providers)}</td>
+        </tr>
+      `).join('');
+    }
     async function runLookup(target) {
       const data = await loadJson(`${endpoints.lookup}?target=${encodeURIComponent(target)}`);
       renderLookup(data);
@@ -193,29 +273,37 @@
         <div class="card"><h2>Config</h2>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}</div>
         <div class="card"><h2>Keys</h2>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}</div>
       `;
-      document.getElementById('providers').innerHTML = providers.map(provider => `
-        <div class="card">
-          <h2>${esc(provider.order)}. ${esc(provider.id)}</h2>
-          <p><span class="pill">${esc(provider.role)}</span><span class="pill">${esc(provider.fallback_phase)}</span></p>
-          <p class="muted">${esc(provider.endpoint)}</p>
-          <p>Key: <code>${esc(provider.key_name || 'none')}</code> · <span class="${provider.key_configured ? 'ok' : 'warn'}">${provider.key_configured ? '已配置' : '未配置/无需'}</span></p>
-          <p class="small">字段：${pills(provider.provides)}</p>
-        </div>
-      `).join('');
-      document.getElementById('fields').innerHTML = fields.map(field => `
-        <tr>
-          <td><strong>${esc(field.field)}</strong><br><span class="muted">${esc(field.label)}</span></td>
-          <td>${esc(field.source_type)}</td>
-          <td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td>
-          <td>${pills(field.used_for)}</td>
-          <td>${providerMap(field.providers)}</td>
-        </tr>
-      `).join('');
+      renderProviders(providers);
+      renderFields(fields);
       document.getElementById('lookup-form').addEventListener('submit', event => {
         event.preventDefault();
         runLookup(document.getElementById('lookup-target').value.trim()).catch(error => {
           document.getElementById('lookup-json').textContent = `查询失败：${error.message}`;
         });
+      });
+      document.getElementById('custom-provider-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const provides = document.getElementById('custom-provider-provides').value.split(',').map(item => item.trim()).filter(Boolean);
+        const response = await fetch(endpoints.customProviders, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
+          id: document.getElementById('custom-provider-id').value.trim(),
+          name: document.getElementById('custom-provider-name').value.trim(),
+          endpoint: document.getElementById('custom-provider-endpoint').value.trim(),
+          provides
+        })});
+        if (!response.ok) throw new Error(`新增 Provider 失败 ${response.status}`);
+        renderProviderConfig(await response.json());
+        await reloadCatalogs();
+      });
+      document.getElementById('custom-field-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const response = await fetch(endpoints.customFields, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
+          field: document.getElementById('custom-field-name').value.trim(),
+          label: document.getElementById('custom-field-label').value.trim(),
+          type: document.getElementById('custom-field-type').value.trim() || 'string'
+        })});
+        if (!response.ok) throw new Error(`新增字段失败 ${response.status}`);
+        renderProviderConfig(await response.json());
+        await reloadCatalogs();
       });
       document.getElementById('save-provider-config').addEventListener('click', async () => {
         const response = await fetch(endpoints.providerConfig, {method:'PUT', headers:{'content-type':'application/json'}, body: JSON.stringify(collectProviderConfig())});
