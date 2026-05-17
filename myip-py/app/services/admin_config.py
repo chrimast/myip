@@ -434,6 +434,7 @@ def default_provider_config() -> dict[str, Any]:
         "custom_providers": [],
         "custom_fields": [],
         "public_custom_providers_enabled": False,
+        "require_custom_provider_preview_ok": False,
     }
 
 
@@ -515,6 +516,12 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         if "enabled" in override:
             normalized_fields[field] = {"enabled": bool(override["enabled"])}
 
+    if payload.get("require_custom_provider_preview_ok") and not payload.get("public_custom_providers_enabled"):
+        raise HTTPException(
+            status_code=422,
+            detail="require_custom_provider_preview_ok requires public custom providers to be enabled",
+        )
+
     return {
         "version": CONFIG_VERSION,
         "providers": sorted(merged_providers.values(), key=lambda item: (item["order"], item["id"])),
@@ -522,6 +529,7 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "custom_providers": custom_providers,
         "custom_fields": custom_fields,
         "public_custom_providers_enabled": bool(payload.get("public_custom_providers_enabled", False)),
+        "require_custom_provider_preview_ok": bool(payload.get("require_custom_provider_preview_ok", False)),
     }
 
 
@@ -586,6 +594,7 @@ def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
         "custom_providers": config["custom_providers"],
         "custom_fields": config["custom_fields"],
         "public_custom_providers_enabled": config.get("public_custom_providers_enabled", False),
+        "require_custom_provider_preview_ok": config.get("require_custom_provider_preview_ok", False),
     }
 
 

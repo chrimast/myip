@@ -18,8 +18,11 @@ LOOKUP_METHODS = {
 }
 
 
-def configured_ip_lookup_provider(*, include_custom: bool = False) -> IPLookupProvider:
-    return ConfiguredIPLookupProvider(include_custom=include_custom)
+def configured_ip_lookup_provider(*, include_custom: bool = False, require_custom_preview_ok: bool = False) -> IPLookupProvider:
+    return ConfiguredIPLookupProvider(
+        include_custom=include_custom,
+        require_custom_preview_ok=require_custom_preview_ok,
+    )
 
 
 def default_provider_factory(provider_id: str, timeout_seconds: float | None) -> IPLookupProvider:
@@ -49,12 +52,24 @@ class SingleMethodProvider:
 
 
 class ConfiguredIPLookupProvider:
-    def __init__(self, provider_factory: ProviderFactory = default_provider_factory, include_custom: bool = False) -> None:
+    def __init__(
+        self,
+        provider_factory: ProviderFactory = default_provider_factory,
+        include_custom: bool = False,
+        require_custom_preview_ok: bool = False,
+    ) -> None:
         self.provider_factory = provider_factory
         self.include_custom = include_custom
+        self.require_custom_preview_ok = require_custom_preview_ok
 
     def lookup(self, ip: str) -> IPInfo:
-        attempts = lookup_with_config(ip, self.provider_factory, continue_after_success=True, include_custom=self.include_custom)
+        attempts = lookup_with_config(
+            ip,
+            self.provider_factory,
+            continue_after_success=True,
+            include_custom=self.include_custom,
+            require_custom_preview_ok=self.require_custom_preview_ok,
+        )
         return attempts.result
 
 
@@ -71,10 +86,14 @@ def lookup_with_config(
     *,
     continue_after_success: bool = False,
     include_custom: bool = True,
+    require_custom_preview_ok: bool = False,
 ) -> ConfiguredLookupResult:
     attempts: list[dict] = []
     results: list[IPInfo] = []
-    enabled_providers = enabled_provider_config(include_custom=include_custom)
+    enabled_providers = enabled_provider_config(
+        include_custom=include_custom,
+        require_custom_preview_ok=require_custom_preview_ok,
+    )
     last_error: Exception | None = None
     for provider_config in enabled_providers:
         provider_id = provider_config["id"]
@@ -154,18 +173,23 @@ def disabled_fields_from_config() -> list[str]:
     )
 
 
-def enabled_provider_config(*, include_custom: bool = True) -> list[dict]:
+def enabled_provider_config(*, include_custom: bool = True, require_custom_preview_ok: bool = False) -> list[dict]:
     definitions = {provider["id"]: provider for provider in PROVIDER_DEFINITIONS}
+    config = read_provider_config()
+    custom_providers = {provider["id"]: provider for provider in config["custom_providers"]}
     configured = []
-    for provider in read_provider_config()["providers"]:
+    for provider in config["providers"]:
         if not provider.get("enabled", True):
             continue
         provider_id = provider["id"]
         if provider_id not in definitions:
             if not include_custom:
                 continue
-            custom_definition = next((item for item in read_provider_config()["custom_providers"] if item["id"] == provider_id), None)
+            custom_definition = custom_providers.get(provider_id)
             if not custom_definition:
+                continue
+            last_preview = custom_definition.get("last_preview") or {}
+            if require_custom_preview_ok and last_preview.get("status") != "ok":
                 continue
             configured.append(
                 {

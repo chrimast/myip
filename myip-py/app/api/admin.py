@@ -113,6 +113,7 @@ def config_status() -> dict:
     config = read_provider_config()
     uses_admin_config = bool(config["exists"])
     public_custom = bool(config.get("public_custom_providers_enabled"))
+    require_preview_ok = bool(config.get("require_custom_provider_preview_ok"))
     public_custom_warnings = _public_custom_provider_warnings(config, public_custom)
     warning = None
     if uses_admin_config:
@@ -128,6 +129,7 @@ def config_status() -> dict:
         "uses_admin_provider_config": uses_admin_config,
         "provider_config_exists": uses_admin_config,
         "public_custom_providers_enabled": public_custom,
+        "require_custom_provider_preview_ok": require_preview_ok,
         "public_custom_provider_warnings": public_custom_warnings,
         "storage_path": config["storage_path"],
         "warning": warning,

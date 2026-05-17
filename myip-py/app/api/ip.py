@@ -157,7 +157,10 @@ def _with_resolution_metadata(
 def get_public_ip_lookup_provider() -> IPLookupProvider:
     config = read_provider_config()
     if config["exists"]:
-        return configured_ip_lookup_provider(include_custom=bool(config.get("public_custom_providers_enabled")))
+        return configured_ip_lookup_provider(
+            include_custom=bool(config.get("public_custom_providers_enabled")),
+            require_custom_preview_ok=bool(config.get("require_custom_provider_preview_ok")),
+        )
     return IPAPIIsLookupProvider()
 
 
