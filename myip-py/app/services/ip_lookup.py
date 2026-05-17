@@ -322,7 +322,8 @@ class IPAPIIsLookupProvider:
             country=_string(data, "country") or None,
             region=_string(data, "region") or None,
             city=_string(data, "city") or None,
-            asn=_format_asn(_string(data, "asn")),
+            asn=_format_asn(_first_string(_string(data, "asn"), _string(asn, "asn"))),
+            asn_owner=_first_string(_string(asn, "name"), _string(data, "asn_name"), _string(data, "as_name")),
             org=_first_string(_string(data, "org"), _string(data, "hostname")),
             isp=_first_string(_string(data, "org"), _string(data, "hostname")),
             latitude=latitude,
@@ -493,7 +494,7 @@ def _merge_provider_results(results: list[IPInfo]) -> IPInfo:
         for field in fields:
             value = getattr(result, field)
             current = getattr(merged, field)
-            if _should_take_field(current, value):
+            if _should_take_field(current, value, field, sources.get(field), result.provider):
                 setattr(merged, field, value)
                 sources[field] = result.provider
 
@@ -531,12 +532,55 @@ def _field_sources_for(info: IPInfo, provider: str) -> dict[str, str]:
     return {field: provider for field in fields if _has_field_value(getattr(info, field))}
 
 
-def _should_take_field(current: Any, value: Any) -> bool:
+PROVIDER_FIELD_PRIORITIES: dict[str, tuple[str, ...]] = {
+    "geo": ("ipapi.is", "ipwho.is", "ip-api.com", "ipapi.org", "ipinfo.io", "ipdata.co"),
+    "asn": ("ipapi.is", "ipinfo.io", "ipdata.co", "ipwho.is", "ip-api.com", "ipapi.org"),
+    "org": ("ipapi.is", "ipinfo.io", "ipdata.co", "ipwho.is", "ip-api.com", "ipapi.org"),
+    "isp": ("ipapi.is", "ipwho.is", "ipinfo.io", "ipdata.co", "ip-api.com", "ipapi.org"),
+    "asn_domain": ("ipapi.is", "ipinfo.io", "ipdata.co"),
+    "org_domain": ("ipapi.is", "ipwho.is"),
+    "registry": ("registry", "ipapi.is"),
+}
+
+FIELD_PRIORITY_GROUPS: dict[str, str] = {
+    "country": "geo",
+    "country_code": "geo",
+    "region": "geo",
+    "city": "geo",
+    "latitude": "geo",
+    "longitude": "geo",
+    "asn": "asn",
+    "asn_owner": "asn",
+    "org": "org",
+    "isp": "isp",
+    "asn_domain": "asn_domain",
+    "org_domain": "org_domain",
+    "registry": "registry",
+    "reg_region": "registry",
+}
+
+
+def _provider_rank(field: str, provider: str | None) -> int:
+    group = FIELD_PRIORITY_GROUPS.get(field)
+    if not group:
+        return 999_999
+    order = PROVIDER_FIELD_PRIORITIES[group]
+    try:
+        return order.index(provider or "")
+    except ValueError:
+        return len(order) + 100
+
+
+def _should_take_field(current: Any, value: Any, field: str | None = None, current_provider: str | None = None, candidate_provider: str | None = None) -> bool:
     if not _has_field_value(value):
         return False
     if isinstance(value, bool):
         return value is True and current is not True
-    return not _has_field_value(current)
+    if not _has_field_value(current):
+        return True
+    if field:
+        return _provider_rank(field, candidate_provider) < _provider_rank(field, current_provider)
+    return False
 
 
 def _has_field_value(value: Any) -> bool:

@@ -309,6 +309,83 @@ def test_provider_maps_registry_and_registration_region_from_ipapi_is(monkeypatc
     assert result.field_sources["reg_region"] == "ipapi.is"
 
 
+def test_ip_source_uses_registered_region_vs_exit_region_not_network_type():
+    from app.services.ip_lookup import IPInfo, enrich_ip_intelligence
+
+    broadcast = enrich_ip_intelligence(
+        IPInfo(
+            ip="203.0.113.1",
+            country="Japan",
+            country_code="JP",
+            asn="AS64500",
+            asn_owner="Example ISP",
+            org="Example Residential Broadband",
+            isp="Example ISP",
+            provider="test",
+            network_type="residential",
+            registry="APNIC",
+            reg_region="US",
+            is_hosting=False,
+        )
+    )
+    native_hosting = enrich_ip_intelligence(
+        IPInfo(
+            ip="203.0.113.2",
+            country="United States",
+            country_code="US",
+            asn="AS64501",
+            asn_owner="Example Cloud",
+            org="Example Cloud",
+            isp="Example Cloud",
+            provider="test",
+            network_type="hosting",
+            registry="ARIN",
+            reg_region="US",
+            is_hosting=True,
+        )
+    )
+
+    assert broadcast.ip_source == "广播IP"
+    assert native_hosting.ip_source == "原生IP"
+
+
+def test_provider_maps_asn_owner_and_company_separately_from_ipapi_is(monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        assert url == "https://api.ipapi.is"
+        return FakeResponse(
+            {
+                "ip": "8.8.8.8",
+                "location": {"country": {"name": "United States", "code": "US"}, "city": "Mountain View"},
+                "asn": {"asn": 15169, "org": "Google LLC", "domain": "google.com"},
+                "company": {"name": "Google Enterprise Customer LLC", "domain": "customer.example"},
+            }
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("8.8.8.8")
+
+    assert result.asn == "AS15169"
+    assert result.asn_owner == "Google LLC"
+    assert result.asn_domain == "google.com"
+    assert result.org == "Google Enterprise Customer LLC"
+    assert result.org_domain == "customer.example"
+    assert result.isp == "Google Enterprise Customer LLC"
+    assert result.field_sources["asn_owner"] == "ipapi.is"
+    assert result.field_sources["org"] == "ipapi.is"
+    assert result.field_sources["isp"] == "ipapi.is"
+
+
 def test_provider_maps_asn_and_org_domains_from_ipapi_is(monkeypatch):
     class FakeResponse:
         def __init__(self, payload: dict) -> None:
@@ -436,6 +513,61 @@ def test_provider_pipeline_follows_go_step_order_for_basic_then_domain_backfill(
     ]
     assert result.asn_domain == "google.com"
     assert result.field_sources["asn_domain"] == "ipinfo.io"
+
+
+def test_provider_merge_uses_go_field_priority_instead_of_first_non_empty(monkeypatch):
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        calls.append(url)
+        if url == "https://api.ipapi.is":
+            return FakeResponse(
+                {
+                    "ip": "8.8.8.8",
+                    "location": {"country": {"name": "United States", "code": "US"}, "city": "Primary City"},
+                    "asn": {"asn": 15169},
+                    "company": {"name": "Primary Company LLC"},
+                    "isp": "Primary ISP LLC",
+                }
+            )
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse(
+                {
+                    "ip": "8.8.8.8",
+                    "asn": {"asn": "AS15169", "name": "IPInfo ASN Owner LLC", "domain": "ipinfo.example"},
+                    "org": "AS15169 IPInfo Org LLC",
+                }
+            )
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse(
+                {
+                    "ip": "8.8.8.8",
+                    "asn": {"asn": "15169", "name": "IPData ASN Owner LLC", "domain": "ipdata.example"},
+                }
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("8.8.8.8")
+
+    assert calls == ["https://api.ipapi.is", "https://ipinfo.io/8.8.8.8/json", "https://api.ipdata.co/8.8.8.8"]
+    assert result.asn_owner == "IPInfo ASN Owner LLC"
+    assert result.org == "Primary Company LLC"
+    assert result.isp == "Primary ISP LLC"
+    assert result.field_sources["asn_owner"] == "ipinfo.io"
+    assert result.field_sources["org"] == "ipapi.is"
+    assert result.field_sources["isp"] == "ipapi.is"
 
 
 def test_provider_pipeline_skips_basic_fallback_when_primary_has_basic_fields_but_still_fetches_missing_domains(monkeypatch):
