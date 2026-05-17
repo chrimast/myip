@@ -3,390 +3,175 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Provider 管理 - myip-py</title>
+  <title>Provider 管理控制台 - myip-py</title>
   <style>
-    :root { color-scheme: dark; --bg:#0f172a; --panel:#111827; --card:#1f2937; --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
-    header { padding:32px 24px 20px; border-bottom:1px solid #243244; background:linear-gradient(135deg,#0f172a,#111827); }
-    h1 { margin:0 0 8px; font-size:30px; }
-    h2 { margin:0 0 16px; font-size:20px; }
-    p { color:var(--muted); line-height:1.6; }
-    main { max-width:1180px; margin:0 auto; padding:24px; }
+    :root { color-scheme: dark; --bg:#0b1120; --panel:#111827; --card:#172033; --card2:#1f2937; --text:#e5e7eb; --muted:#94a3b8; --line:#334155; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --bad:#f87171; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(180deg,#08111f,#0f172a 280px); color:var(--text); }
+    header { padding:32px 24px 22px; border-bottom:1px solid #243244; }
+    h1 { margin:0 0 8px; font-size:32px; }
+    h2 { margin:0 0 14px; font-size:20px; }
+    h3 { margin:0 0 10px; font-size:16px; color:#cbd5e1; }
+    p { color:var(--muted); line-height:1.65; }
+    main { max-width:1220px; margin:0 auto; padding:24px; }
+    nav { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    nav a, .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px; background:#172554; color:#bfdbfe; text-decoration:none; margin:2px 4px 2px 0; }
+    section { margin-bottom:24px; scroll-margin-top:18px; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
-    .card { background:var(--card); border:1px solid #334155; border-radius:14px; padding:18px; box-shadow:0 16px 40px rgba(0,0,0,.18); }
-    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:999px; font-size:12px; background:#172554; color:#bfdbfe; margin:2px 4px 2px 0; }
-    .ok { color:var(--ok); } .warn { color:var(--warn); }
-    code { color:#bae6fd; }
-    table { width:100%; border-collapse:collapse; font-size:14px; }
-    th, td { text-align:left; vertical-align:top; padding:10px; border-bottom:1px solid #334155; }
-    th { color:#cbd5e1; }
-    section { margin-bottom:24px; }
+    .two-col { display:grid; grid-template-columns:minmax(320px,1.2fr) minmax(300px,.8fr); gap:16px; }
+    .card { background:rgba(31,41,55,.92); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:0 16px 40px rgba(0,0,0,.18); }
+    .hero-card { background:linear-gradient(135deg,#172554,#0f172a); border-color:#2563eb; }
     .muted { color:var(--muted); }
     .small { font-size:12px; }
+    .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+    code { color:#bae6fd; }
+    input { width:min(440px,100%); padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#0f172a; color:var(--text); margin:4px 6px 6px 0; }
+    input[type="checkbox"] { width:auto; }
+    button { padding:11px 16px; border:0; border-radius:10px; background:var(--accent); color:#082f49; font-weight:700; cursor:pointer; margin:4px 6px 6px 0; }
+    button.secondary { background:#334155; color:#e5e7eb; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th,td { text-align:left; vertical-align:top; padding:10px; border-bottom:1px solid var(--line); }
+    th { color:#cbd5e1; }
+    pre { overflow:auto; background:#020617; border:1px solid var(--line); border-radius:12px; padding:14px; }
+    details { border:1px solid var(--line); border-radius:14px; padding:12px; background:#0f172a; }
+    details summary { cursor:pointer; color:#bae6fd; font-weight:700; }
     .error { color:#fecaca; background:#7f1d1d; padding:12px; border-radius:10px; display:none; }
-    input { width:min(420px,100%); padding:11px 12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:var(--text); }
-    button { padding:11px 16px; border:0; border-radius:10px; background:var(--accent); color:#082f49; font-weight:700; cursor:pointer; }
-    pre { overflow:auto; background:#020617; border:1px solid #334155; border-radius:12px; padding:14px; }
+    .step { border-left:3px solid #38bdf8; padding-left:14px; margin:16px 0; }
+    .provider-config-row { display:grid; grid-template-columns:1fr auto auto auto; gap:10px; align-items:center; padding:12px; border:1px solid var(--line); border-radius:14px; margin:8px 0; background:#111827; }
+    @media (max-width:860px) { .two-col,.provider-config-row { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>Provider 管理</h1>
-    <p>统一查看 myip-py 的 Provider、字段管理、运行配置和结构化评分信号。当前版本为只读后台，不展示密钥明文。</p>
+    <h1>Provider 管理控制台</h1>
+    <p>面向日常管理重新整理：先看总览和公开接口状态，再管理 Provider、自定义扩展；后台 debug 默认收起。</p>
     <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code> · <code>/api/admin/config-status</code></p>
+    <nav>
+      <a href="#overview">1. 总览</a>
+      <a href="#public-control">2. 公开接口控制</a>
+      <a href="#provider-management">3. Provider 管理</a>
+      <a href="#custom-extensions">4. 自定义扩展</a>
+      <a href="#lookup-debug">高级调试</a>
+    </nav>
   </header>
   <main>
     <div id="error" class="error"></div>
 
-    <section>
-      <h2>公开接口模式</h2>
+    <section id="overview">
+      <h2>1. 总览</h2>
+      <div class="grid">
+        <div id="status-summary" class="card hero-card">加载中</div>
+        <div id="settings" class="card">加载中</div>
+        <div class="card">
+          <h3>下一步建议</h3>
+          <p>优先确认公开接口模式，再启用/禁用 Provider。需要接入新数据源时，按自定义 Provider 的 5 个步骤完成验证后再启用。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="public-control">
+      <h2>2. 公开接口控制</h2>
       <div id="config-status" class="card">加载中</div>
     </section>
 
-    <section>
-      <h2>运行配置</h2>
-      <div id="settings" class="grid"></div>
+    <section id="provider-management">
+      <h2>3. Provider 管理</h2>
+      <div class="two-col">
+        <div class="card">
+          <h3>Provider 配置</h3>
+          <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。</p>
+          <label class="pill"><input type="checkbox" data-public-custom-providers-enabled> 允许自定义 Provider 用于公开接口</label>
+          <label class="pill"><input type="checkbox" data-require-custom-provider-preview-ok> 要求自定义 Provider 验证成功后才用于公开接口</label>
+          <p class="small warn">当前公开接口正在使用的模式会在上方显示；只有显式允许后，自定义 Provider 才能进入公开接口。</p>
+          <div id="provider-config"></div>
+          <h3 style="margin-top:18px">字段开关</h3>
+          <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
+          <div id="field-config"></div>
+          <button id="save-provider-config" type="button">保存配置</button>
+          <button id="reset-provider-config" class="secondary" type="button">恢复默认生产链</button>
+          <details style="margin-top:12px"><summary>查看配置 JSON</summary><pre id="provider-config-json">加载中</pre></details>
+        </div>
+        <div class="card">
+          <h3>Provider 卡片</h3>
+          <div id="providers" class="grid"></div>
+        </div>
+      </div>
     </section>
 
-    <section>
-      <h2>查询调试</h2>
+    <section id="custom-extensions">
+      <h2>4. 自定义扩展</h2>
+      <div class="two-col">
+        <div class="card">
+          <h3>自定义 Provider</h3>
+          <p class="small">按步骤填写：先保存元数据，再测试字段提取预览。启用并保存后可参与后台 <code>/api/admin/lookup</code>；进入公开 <code>/api/ip</code> 还需要显式允许。</p>
+          <form id="custom-provider-form">
+            <div class="step"><h3>步骤 1：基本信息</h3><input id="custom-provider-id" placeholder="provider id，例如 example-provider"><input id="custom-provider-name" placeholder="显示名称"></div>
+            <div class="step"><h3>步骤 2：Endpoint</h3><input id="custom-provider-endpoint" placeholder="https://api.example.com/{ip}"></div>
+            <div class="step"><h3>步骤 3：字段映射</h3><input id="custom-provider-provides" placeholder="字段，逗号分隔，例如 country,fraud_score"><input id="custom-provider-field-paths" placeholder="字段路径 JSON，例如 {&quot;country&quot;:[&quot;location.country&quot;]}"><input id="custom-provider-transforms" placeholder="转换 JSON，可选，例如 {&quot;asn&quot;:&quot;asn_int&quot;}"></div>
+            <button type="submit">新增 Provider</button>
+          </form>
+          <div class="step"><h3>步骤 4：测试验证</h3><form id="custom-provider-preview-form"><input id="custom-provider-preview-ip" placeholder="测试 IP，例如 8.8.8.8"><input id="custom-provider-preview-id" placeholder="provider id；留空使用上方表单"><button type="submit">测试自定义 Provider</button></form><pre id="custom-provider-preview-json">尚未测试</pre></div>
+          <div class="step"><h3>步骤 5：启用</h3><p class="small">回到 Provider 管理中勾选对应 Provider 并保存；若要进入公开接口，还需开启公开自定义 Provider。</p></div>
+          <div id="custom-provider-list" style="margin-top:12px"></div>
+        </div>
+        <div class="card">
+          <h3>自定义字段</h3>
+          <p class="small">自定义字段默认不参与评分，只用于展示/调试；不同 Provider 的原始字段名通过映射配置。</p>
+          <form id="custom-field-form">
+            <input id="custom-field-name" placeholder="字段名，例如 fraud_score">
+            <input id="custom-field-label" placeholder="显示标签，例如 欺诈评分">
+            <input id="custom-field-type" placeholder="类型 string/bool/int/float/list/object" value="string">
+            <button type="submit">新增字段</button>
+          </form>
+          <div id="custom-field-list" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="lookup-debug">
+      <h2>高级调试</h2>
       <div class="card">
-        <p>输入 IP、域名或 URL，查看后台查询结果、字段来源、内部枚举和评分拆解。</p>
-        <form id="lookup-form">
-          <input id="lookup-target" name="target" value="8.8.8.8" autocomplete="off" placeholder="8.8.8.8 或 example.com">
-          <button type="submit">查询</button>
-        </form>
+        <p>输入 IP、域名或 URL，默认只显示关键结论；Provider 调用链、字段来源、禁用字段和原始 JSON 已收起到高级调试中。</p>
+        <form id="lookup-form"><input id="lookup-target" name="target" value="8.8.8.8" autocomplete="off" placeholder="8.8.8.8 或 example.com"><button type="submit">查询</button></form>
         <div id="lookup-summary" class="grid" style="margin-top:16px"></div>
-        <h2 style="margin-top:18px">Provider 调用链</h2>
-        <div id="lookup-attempts"></div>
-        <h2 style="margin-top:18px">禁用字段</h2>
-        <div id="lookup-disabled-fields"></div>
-        <h2 style="margin-top:18px">字段来源</h2>
-        <div id="lookup-sources"></div>
-        <h2 style="margin-top:18px">原始调试 JSON</h2>
-        <pre id="lookup-json">尚未查询</pre>
+        <details data-advanced-debug style="margin-top:16px">
+          <summary>展开高级调试：Provider 调用链 / 字段来源 / 禁用字段 / 原始 JSON</summary>
+          <h3 style="margin-top:18px">Provider 调用链</h3><div id="lookup-attempts"></div>
+          <h3 style="margin-top:18px">禁用字段</h3><div id="lookup-disabled-fields"></div>
+          <h3 style="margin-top:18px">字段来源</h3><div id="lookup-sources"></div>
+          <h3 style="margin-top:18px">原始调试 JSON</h3><pre id="lookup-json">尚未查询</pre>
+        </details>
       </div>
-    </section>
-
-    <section>
-      <h2>Provider 配置</h2>
-      <div class="card">
-        <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。不会保存或展示 API key 明文。</p>
-        <label class="pill"><input type="checkbox" data-public-custom-providers-enabled> 允许自定义 Provider 用于公开接口</label>
-        <label class="pill"><input type="checkbox" data-require-custom-provider-preview-ok> 要求自定义 Provider 验证成功后才用于公开接口</label>
-        <p class="small warn">只有勾选“允许自定义 Provider 用于公开接口”后，已启用的自定义 Provider 才会进入公开 <code>/api/ip</code>；若同时要求验证成功，公开接口会跳过最近未验证或验证失败的自定义 Provider 并继续 fallback。</p>
-        <div id="provider-config"></div>
-        <h2 style="margin-top:18px">字段开关</h2>
-        <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
-        <div id="field-config"></div>
-        <button id="save-provider-config" type="button">保存配置</button>
-        <button id="reset-provider-config" type="button">恢复默认生产链</button>
-        <pre id="provider-config-json">加载中</pre>
-      </div>
-    </section>
-
-    <section>
-      <h2>自定义 Provider</h2>
-      <div class="card">
-        <p class="small">当前阶段可保存元数据和字段映射、测试字段提取预览；启用并保存后可参与后台 <code>/api/admin/lookup</code> 调试查询。若需要进入公开 <code>/api/ip</code>，还必须在 Provider 配置中显式勾选“允许自定义 Provider 用于公开接口”。</p>
-        <form id="custom-provider-form">
-          <input id="custom-provider-id" placeholder="provider id，例如 example-provider">
-          <input id="custom-provider-name" placeholder="显示名称">
-          <input id="custom-provider-endpoint" placeholder="https://api.example.com/{ip}">
-          <input id="custom-provider-provides" placeholder="字段，逗号分隔，例如 country,fraud_score">
-          <input id="custom-provider-field-paths" placeholder="字段路径 JSON，例如 {&quot;country&quot;:[&quot;location.country&quot;]}">
-          <input id="custom-provider-transforms" placeholder="转换 JSON，可选，例如 {&quot;asn&quot;:&quot;asn_int&quot;}">
-          <button type="submit">新增 Provider</button>
-        </form>
-        <h3>测试自定义 Provider</h3>
-        <form id="custom-provider-preview-form">
-          <input id="custom-provider-preview-ip" placeholder="测试 IP，例如 8.8.8.8">
-          <input id="custom-provider-preview-id" placeholder="provider id；留空使用上方表单">
-          <button type="submit">测试自定义 Provider</button>
-        </form>
-        <pre id="custom-provider-preview-json">尚未测试</pre>
-        <div id="custom-provider-list" style="margin-top:12px"></div>
-      </div>
-    </section>
-
-    <section>
-      <h2>自定义字段</h2>
-      <div class="card">
-        <p class="small">自定义字段默认不参与评分，只用于展示/调试；不同 Provider 的原始字段名后续通过映射配置。</p>
-        <form id="custom-field-form">
-          <input id="custom-field-name" placeholder="字段名，例如 fraud_score">
-          <input id="custom-field-label" placeholder="显示标签，例如 欺诈评分">
-          <input id="custom-field-type" placeholder="类型 string/bool/int/float/list/object" value="string">
-          <button type="submit">新增字段</button>
-        </form>
-        <div id="custom-field-list" style="margin-top:12px"></div>
-      </div>
-    </section>
-
-    <section>
-      <h2>Provider 列表</h2>
-      <div id="providers" class="grid"></div>
     </section>
 
     <section>
       <h2>字段管理</h2>
-      <div class="card">
-        <table>
-          <thead>
-            <tr><th>字段</th><th>来源类型</th><th>参与评分</th><th>用途</th><th>Provider 映射</th></tr>
-          </thead>
-          <tbody id="fields"></tbody>
-        </table>
-      </div>
+      <div class="card"><table><thead><tr><th>字段</th><th>来源类型</th><th>参与评分</th><th>用途</th><th>Provider 映射</th></tr></thead><tbody id="fields"></tbody></table></div>
     </section>
   </main>
   <script>
-    const endpoints = {
-      settings: '/api/admin/settings',
-      providers: '/api/admin/providers',
-      fields: '/api/admin/fields',
-      lookup: '/api/admin/lookup',
-      providerConfig: '/api/admin/provider-config',
-      configStatus: '/api/admin/config-status',
-      customProviders: '/api/admin/custom-providers',
-      customProviderPreview: '/api/admin/custom-providers/preview',
-      customFields: '/api/admin/custom-fields'
-    };
+    const endpoints = { settings:'/api/admin/settings', providers:'/api/admin/providers', fields:'/api/admin/fields', lookup:'/api/admin/lookup', providerConfig:'/api/admin/provider-config', configStatus:'/api/admin/config-status', customProviders:'/api/admin/custom-providers', customProviderPreview:'/api/admin/custom-providers/preview', customFields:'/api/admin/custom-fields' };
     function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
     function pills(items) { return (items || []).map(item => `<span class="pill">${esc(item)}</span>`).join(''); }
-    function providerMap(map) {
-      return Object.entries(map || {}).map(([provider, paths]) => `<div><strong>${esc(provider)}</strong>: ${pills(paths)}</div>`).join('') || '<span class="muted">无</span>';
-    }
-    function parseJsonInput(id, fallback) {
-      const value = document.getElementById(id).value.trim();
-      if (!value) return fallback;
-      return JSON.parse(value);
-    }
-    function collectCustomProviderForm(providerIdOverride) {
-      const provides = document.getElementById('custom-provider-provides').value.split(',').map(item => item.trim()).filter(Boolean);
-      return {
-        id: providerIdOverride || document.getElementById('custom-provider-id').value.trim(),
-        name: document.getElementById('custom-provider-name').value.trim(),
-        endpoint: document.getElementById('custom-provider-endpoint').value.trim(),
-        provides,
-        field_paths: parseJsonInput('custom-provider-field-paths', {}),
-        transforms: parseJsonInput('custom-provider-transforms', {})
-      };
-    }
-    function renderConfigStatus(status) {
-      document.getElementById('config-status').innerHTML = `
-        <p><strong>公开接口模式</strong>: <span class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(status.public_lookup_mode)}</span></p>
-        <p>配置文件: <code>${esc(status.storage_path)}</code></p>
-        <p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p>
-        <p>公开自定义 Provider: ${status.public_custom_providers_enabled ? '<span class="warn">已允许</span>' : '<span class="ok">未允许</span>'}</p>
-        <p>公开自定义 Provider 验证保护: ${status.require_custom_provider_preview_ok ? '<span class="warn">已启用</span>' : '<span class="ok">未启用</span>'}</p>
-        <div data-public-custom-provider-warnings>${pills(status.public_custom_provider_warnings || [])}</div>
-        ${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}
-      `;
-    }
-    async function refreshConfigStatus() {
-      renderConfigStatus(await loadJson(endpoints.configStatus));
-    }
-    function renderLookup(data) {
-      document.getElementById('lookup-summary').innerHTML = `
-        <div class="card"><strong>目标</strong><p>${esc(data.input)} → <code>${esc(data.resolved_ip)}</code></p></div>
-        <div class="card"><strong>Provider</strong><p>${esc(data.debug.provider)}</p></div>
-        <div class="card"><strong>内部枚举</strong><p>${esc(data.debug.network_category)}</p></div>
-        <div class="card"><strong>IP 属性/来源</strong><p>${esc(data.result.ip_property)} · ${esc(data.result.ip_source)}</p></div>
-        <div class="card"><strong>风险</strong><p>${esc(data.result.risk_score)} / 100</p></div>
-      `;
-      document.getElementById('lookup-sources').innerHTML = Object.entries(data.field_sources || {})
-        .map(([field, provider]) => `<span class="pill"><strong>${esc(field)}</strong>: ${esc(provider)}</span>`).join('') || '<span class="muted">无字段来源</span>';
-      document.getElementById('lookup-attempts').innerHTML = (data.debug.provider_attempts || [])
-        .map(attempt => `<span class="pill"><strong>${esc(attempt.provider)}</strong>: ${esc(attempt.status)} · timeout=${esc(attempt.timeout_seconds ?? '默认')}${attempt.error ? ` · ${esc(attempt.error)}` : ''}</span>`).join('') || '<span class="muted">尚无调用记录</span>';
-      document.getElementById('lookup-disabled-fields').innerHTML = pills(data.debug.disabled_fields || []) || '<span class="muted">无禁用字段</span>';
-      document.getElementById('lookup-json').textContent = JSON.stringify(data, null, 2);
-    }
-    function renderCustomMetadata(config) {
-      document.getElementById('custom-provider-list').innerHTML = (config.custom_providers || [])
-        .map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <span data-preview-status="${esc(provider.id)}">最后验证: ${provider.last_preview ? `${esc(provider.last_preview.status)} · ${esc(provider.last_preview.ip)} · ${esc(provider.last_preview.checked_at)}` : '未验证'}</span> <button type="button" data-load-custom-provider="${esc(provider.id)}">载入</button> <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`)
-        .join('') || '<span class="muted">暂无自定义 Provider</span>';
-      document.getElementById('custom-field-list').innerHTML = (config.custom_fields || [])
-        .map(field => `<span class="pill"><strong>${esc(field.field)}</strong> ${esc(field.label)} · ${esc(field.type)} <button type="button" data-delete-custom-field="${esc(field.field)}">删除</button></span>`)
-        .join('') || '<span class="muted">暂无自定义字段</span>';
-      document.querySelectorAll('[data-load-custom-provider]').forEach(button => button.addEventListener('click', () => {
-        const provider = (config.custom_providers || []).find(item => item.id === button.dataset.loadCustomProvider);
-        if (!provider) return;
-        document.getElementById('custom-provider-id').value = provider.id;
-        document.getElementById('custom-provider-name').value = provider.name;
-        document.getElementById('custom-provider-endpoint').value = provider.endpoint;
-        document.getElementById('custom-provider-provides').value = (provider.provides || []).join(',');
-        document.getElementById('custom-provider-field-paths').value = JSON.stringify(provider.field_paths || {});
-        document.getElementById('custom-provider-transforms').value = JSON.stringify(provider.transforms || {});
-        document.getElementById('custom-provider-preview-id').value = provider.id;
-      }));
-      document.querySelectorAll('[data-delete-custom-provider]').forEach(button => button.addEventListener('click', async () => {
-        const response = await fetch(`${endpoints.customProviders}/${encodeURIComponent(button.dataset.deleteCustomProvider)}`, {method:'DELETE'});
-        if (!response.ok) throw new Error(`删除 Provider 失败 ${response.status}`);
-        renderProviderConfig(await response.json());
-        await reloadCatalogs();
-      }));
-      document.querySelectorAll('[data-delete-custom-field]').forEach(button => button.addEventListener('click', async () => {
-        const response = await fetch(`${endpoints.customFields}/${encodeURIComponent(button.dataset.deleteCustomField)}`, {method:'DELETE'});
-        if (!response.ok) throw new Error(`删除字段失败 ${response.status}`);
-        renderProviderConfig(await response.json());
-        await reloadCatalogs();
-      }));
-    }
-    function renderProviderConfig(config) {
-      const fieldOverrides = config.field_overrides || {};
-      renderCustomMetadata(config);
-      const publicCustomToggle = document.querySelector('[data-public-custom-providers-enabled]');
-      if (publicCustomToggle) publicCustomToggle.checked = Boolean(config.public_custom_providers_enabled);
-      const requirePreviewToggle = document.querySelector('[data-require-custom-provider-preview-ok]');
-      if (requirePreviewToggle) requirePreviewToggle.checked = Boolean(config.require_custom_provider_preview_ok);
-      document.getElementById('provider-config').innerHTML = (config.providers || []).map(provider => `
-        <label class="pill"><input type="checkbox" data-provider-enabled="${esc(provider.id)}" ${provider.enabled ? 'checked' : ''}> ${esc(provider.id)}</label>
-        <label class="pill">顺序 <input style="width:70px;padding:4px" type="number" min="1" data-provider-order="${esc(provider.id)}" value="${esc(provider.order)}"></label>
-        <label class="pill">超时 <input style="width:90px;padding:4px" type="number" min="0" step="0.1" data-provider-timeout="${esc(provider.id)}" value="${esc(provider.timeout_seconds ?? '')}"></label><br>
-      `).join('');
-      document.getElementById('field-config').innerHTML = (window.adminFields || []).map(field => {
-        const override = fieldOverrides[field.field] || {};
-        const enabled = override.enabled !== false;
-        return `<label class="pill" title="${esc(field.label)}"><input type="checkbox" data-field-enabled="${esc(field.field)}" ${enabled ? 'checked' : ''}> ${esc(field.field)}${field.scoring ? ' · 评分' : ''}</label>`;
-      }).join('') || '<span class="muted">字段元数据尚未加载</span>';
-      document.getElementById('provider-config-json').textContent = JSON.stringify(config, null, 2);
-    }
-    function collectProviderConfig() {
-      const providers = [...document.querySelectorAll('[data-provider-enabled]')].map(input => {
-        const id = input.dataset.providerEnabled;
-        const timeout = document.querySelector(`[data-provider-timeout="${id}"]`).value;
-        return {
-          id,
-          enabled: input.checked,
-          order: Number(document.querySelector(`[data-provider-order="${id}"]`).value),
-          timeout_seconds: timeout === '' ? null : Number(timeout)
-        };
-      });
-      const field_overrides = Object.fromEntries([...document.querySelectorAll('[data-field-enabled]')].map(input => [
-        input.dataset.fieldEnabled,
-        { enabled: input.checked }
-      ]));
-      return {
-        providers,
-        field_overrides,
-        public_custom_providers_enabled: Boolean(document.querySelector('[data-public-custom-providers-enabled]')?.checked),
-        require_custom_provider_preview_ok: Boolean(document.querySelector('[data-require-custom-provider-preview-ok]')?.checked)
-      };
-    }
-    async function loadProviderConfig() {
-      renderProviderConfig(await loadJson(endpoints.providerConfig));
-    }
-    async function reloadCatalogs() {
-      const [providers, fields] = await Promise.all([loadJson(endpoints.providers), loadJson(endpoints.fields)]);
-      window.adminFields = fields;
-      renderProviders(providers);
-      renderFields(fields);
-    }
-    function renderProviders(providers) {
-      document.getElementById('providers').innerHTML = providers.map(provider => `
-        <div class="card">
-          <h2>${esc(provider.order)}. ${esc(provider.id)}${provider.custom ? ' · 自定义' : ''}</h2>
-          <p><span class="pill">${esc(provider.role)}</span><span class="pill">${esc(provider.fallback_phase)}</span></p>
-          <p class="muted">${esc(provider.endpoint)}</p>
-          <p>Key: <code>${esc(provider.key_name || 'none')}</code> · <span class="${provider.key_configured ? 'ok' : 'warn'}">${provider.key_configured ? '已配置' : '未配置/无需'}</span></p>
-          <p class="small">字段：${pills(provider.provides)}</p>
-        </div>
-      `).join('');
-    }
-    function renderFields(fields) {
-      document.getElementById('fields').innerHTML = fields.map(field => `
-        <tr>
-          <td><strong>${esc(field.field)}</strong>${field.custom ? ' <span class="pill">自定义</span>' : ''}<br><span class="muted">${esc(field.label)}</span></td>
-          <td>${esc(field.source_type)}</td>
-          <td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td>
-          <td>${pills(field.used_for)}</td>
-          <td>${providerMap(field.providers)}</td>
-        </tr>
-      `).join('');
-    }
-    async function runLookup(target) {
-      const data = await loadJson(`${endpoints.lookup}?target=${encodeURIComponent(target)}`);
-      renderLookup(data);
-    }
-    async function loadJson(url) {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`${url} ${response.status}`);
-      return response.json();
-    }
-    async function boot() {
-      const [settings, providers, fields, status] = await Promise.all([
-        loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields), loadJson(endpoints.configStatus)
-      ]);
-      renderConfigStatus(status);
-      window.adminFields = fields;
-      document.getElementById('settings').innerHTML = `
-        <div class="card"><h2>Config</h2>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}</div>
-        <div class="card"><h2>Keys</h2>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}</div>
-      `;
-      renderProviders(providers);
-      renderFields(fields);
-      document.getElementById('lookup-form').addEventListener('submit', event => {
-        event.preventDefault();
-        runLookup(document.getElementById('lookup-target').value.trim()).catch(error => {
-          document.getElementById('lookup-json').textContent = `查询失败：${error.message}`;
-        });
-      });
-      document.getElementById('custom-provider-form').addEventListener('submit', async event => {
-        event.preventDefault();
-        const response = await fetch(endpoints.customProviders, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(collectCustomProviderForm())});
-        if (!response.ok) throw new Error(`新增 Provider 失败 ${response.status}`);
-        renderProviderConfig(await response.json());
-        await reloadCatalogs();
-      });
-      document.getElementById('custom-provider-preview-form').addEventListener('submit', async event => {
-        event.preventDefault();
-        const providerId = document.getElementById('custom-provider-preview-id').value.trim();
-        const response = await fetch(endpoints.customProviderPreview, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
-          ip: document.getElementById('custom-provider-preview-ip').value.trim(),
-          provider: collectCustomProviderForm(providerId || undefined)
-        })});
-        const body = await response.json();
-        document.getElementById('custom-provider-preview-json').textContent = JSON.stringify(body, null, 2);
-        if (response.ok) renderProviderConfig(await loadJson(endpoints.providerConfig));
-        if (!response.ok) {
-          renderProviderConfig(await loadJson(endpoints.providerConfig));
-          throw new Error(`测试 Provider 失败 ${response.status}`);
-        }
-      });
-      document.getElementById('custom-field-form').addEventListener('submit', async event => {
-        event.preventDefault();
-        const response = await fetch(endpoints.customFields, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
-          field: document.getElementById('custom-field-name').value.trim(),
-          label: document.getElementById('custom-field-label').value.trim(),
-          type: document.getElementById('custom-field-type').value.trim() || 'string'
-        })});
-        if (!response.ok) throw new Error(`新增字段失败 ${response.status}`);
-        renderProviderConfig(await response.json());
-        await reloadCatalogs();
-      });
-      document.getElementById('save-provider-config').addEventListener('click', async () => {
-        const response = await fetch(endpoints.providerConfig, {method:'PUT', headers:{'content-type':'application/json'}, body: JSON.stringify(collectProviderConfig())});
-        if (!response.ok) throw new Error(`保存失败 ${response.status}`);
-        renderProviderConfig(await response.json());
-        await refreshConfigStatus();
-      });
-      document.getElementById('reset-provider-config').addEventListener('click', async () => {
-        const response = await fetch(`${endpoints.providerConfig}/reset`, {method:'POST'});
-        if (!response.ok) throw new Error(`重置失败 ${response.status}`);
-        renderProviderConfig(await response.json());
-        await refreshConfigStatus();
-      });
-      loadProviderConfig().catch(error => {
-        document.getElementById('provider-config-json').textContent = `配置加载失败：${error.message}`;
-      });
-    }
-    boot().catch(error => {
-      const node = document.getElementById('error');
-      node.style.display = 'block';
-      node.textContent = `后台数据加载失败：${error.message}`;
-    });
+    function providerMap(map) { return Object.entries(map || {}).map(([provider, paths]) => `<div><strong>${esc(provider)}</strong>: ${pills(paths)}</div>`).join('') || '<span class="muted">无</span>'; }
+    function parseJsonInput(id, fallback) { const value = document.getElementById(id).value.trim(); return value ? JSON.parse(value) : fallback; }
+    function collectCustomProviderForm(providerIdOverride) { const provides = document.getElementById('custom-provider-provides').value.split(',').map(item => item.trim()).filter(Boolean); return { id: providerIdOverride || document.getElementById('custom-provider-id').value.trim(), name: document.getElementById('custom-provider-name').value.trim(), endpoint: document.getElementById('custom-provider-endpoint').value.trim(), provides, field_paths: parseJsonInput('custom-provider-field-paths', {}), transforms: parseJsonInput('custom-provider-transforms', {}) }; }
+    function publicModeText(status) { return status.uses_admin_provider_config ? '后台保存配置正在影响公开 /api/ip' : '默认生产链'; }
+    function renderStatusSummary(status, providers) { const enabledCount = (providers || []).filter(p => p.enabled).length; document.getElementById('status-summary').innerHTML = `<h3>当前公开接口正在使用</h3><p><strong class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(publicModeText(status))}</strong></p><p>启用 Provider: <strong>${enabledCount}</strong></p><p>验证风险: ${(status.public_custom_provider_warnings || []).length ? pills(status.public_custom_provider_warnings) : '<span class="ok">无</span>'}</p>`; }
+    function renderConfigStatus(status) { document.getElementById('config-status').innerHTML = `<p><strong>公开接口模式</strong>: <span class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(publicModeText(status))}</span></p><p>配置文件: <code>${esc(status.storage_path)}</code></p><p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p><p>公开自定义 Provider: ${status.public_custom_providers_enabled ? '<span class="warn">已允许</span>' : '<span class="ok">未允许</span>'}</p><p>公开自定义 Provider 验证保护: ${status.require_custom_provider_preview_ok ? '<span class="warn">已启用</span>' : '<span class="ok">未启用</span>'}</p><div data-public-custom-provider-warnings>${pills(status.public_custom_provider_warnings || [])}</div>${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}`; }
+    async function refreshConfigStatus() { const status = await loadJson(endpoints.configStatus); const providers = await loadJson(endpoints.providers); renderConfigStatus(status); renderStatusSummary(status, providers); }
+    function renderLookup(data) { document.getElementById('lookup-summary').innerHTML = `<div class="card"><strong>目标</strong><p>${esc(data.input)} → <code>${esc(data.resolved_ip)}</code></p></div><div class="card"><strong>Provider</strong><p>${esc(data.debug.provider)}</p></div><div class="card"><strong>IP 属性/来源</strong><p>${esc(data.result.ip_property)} · ${esc(data.result.ip_source)}</p></div><div class="card"><strong>风险</strong><p>${esc(data.result.risk_score)} / 100</p></div>`; document.getElementById('lookup-sources').innerHTML = Object.entries(data.field_sources || {}).map(([field, provider]) => `<span class="pill"><strong>${esc(field)}</strong>: ${esc(provider)}</span>`).join('') || '<span class="muted">无字段来源</span>'; document.getElementById('lookup-attempts').innerHTML = (data.debug.provider_attempts || []).map(attempt => `<span class="pill"><strong>${esc(attempt.provider)}</strong>: ${esc(attempt.status)} · timeout=${esc(attempt.timeout_seconds ?? '默认')}${attempt.error ? ` · ${esc(attempt.error)}` : ''}</span>`).join('') || '<span class="muted">尚无调用记录</span>'; document.getElementById('lookup-disabled-fields').innerHTML = pills(data.debug.disabled_fields || []) || '<span class="muted">无禁用字段</span>'; document.getElementById('lookup-json').textContent = JSON.stringify(data, null, 2); }
+    function renderCustomMetadata(config) { document.getElementById('custom-provider-list').innerHTML = (config.custom_providers || []).map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <span data-preview-status="${esc(provider.id)}">最后验证: ${provider.last_preview ? `${esc(provider.last_preview.status)} · ${esc(provider.last_preview.ip)} · ${esc(provider.last_preview.checked_at)}` : '未验证'}</span> <button type="button" data-load-custom-provider="${esc(provider.id)}">载入</button> <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`).join('') || '<span class="muted">暂无自定义 Provider</span>'; document.getElementById('custom-field-list').innerHTML = (config.custom_fields || []).map(field => `<span class="pill"><strong>${esc(field.field)}</strong> ${esc(field.label)} · ${esc(field.type)} <button type="button" data-delete-custom-field="${esc(field.field)}">删除</button></span>`).join('') || '<span class="muted">暂无自定义字段</span>'; document.querySelectorAll('[data-load-custom-provider]').forEach(button => button.addEventListener('click', () => { const provider = (config.custom_providers || []).find(item => item.id === button.dataset.loadCustomProvider); if (!provider) return; document.getElementById('custom-provider-id').value = provider.id; document.getElementById('custom-provider-name').value = provider.name; document.getElementById('custom-provider-endpoint').value = provider.endpoint; document.getElementById('custom-provider-provides').value = (provider.provides || []).join(','); document.getElementById('custom-provider-field-paths').value = JSON.stringify(provider.field_paths || {}); document.getElementById('custom-provider-transforms').value = JSON.stringify(provider.transforms || {}); document.getElementById('custom-provider-preview-id').value = provider.id; })); document.querySelectorAll('[data-delete-custom-provider]').forEach(button => button.addEventListener('click', async () => { const response = await fetch(`${endpoints.customProviders}/${encodeURIComponent(button.dataset.deleteCustomProvider)}`, {method:'DELETE'}); if (!response.ok) throw new Error(`删除 Provider 失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); })); document.querySelectorAll('[data-delete-custom-field]').forEach(button => button.addEventListener('click', async () => { const response = await fetch(`${endpoints.customFields}/${encodeURIComponent(button.dataset.deleteCustomField)}`, {method:'DELETE'}); if (!response.ok) throw new Error(`删除字段失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); })); }
+    function renderProviderConfig(config) { const fieldOverrides = config.field_overrides || {}; renderCustomMetadata(config); const publicCustomToggle = document.querySelector('[data-public-custom-providers-enabled]'); if (publicCustomToggle) publicCustomToggle.checked = Boolean(config.public_custom_providers_enabled); const requirePreviewToggle = document.querySelector('[data-require-custom-provider-preview-ok]'); if (requirePreviewToggle) requirePreviewToggle.checked = Boolean(config.require_custom_provider_preview_ok); document.getElementById('provider-config').innerHTML = (config.providers || []).map(provider => `<div class="provider-config-row"><strong>${esc(provider.id)}</strong><label>启用 <input type="checkbox" data-provider-enabled="${esc(provider.id)}" ${provider.enabled ? 'checked' : ''}></label><label>顺序 <input style="width:76px;padding:6px" type="number" min="1" data-provider-order="${esc(provider.id)}" value="${esc(provider.order)}"></label><label>超时 <input style="width:90px;padding:6px" type="number" min="0" step="0.1" data-provider-timeout="${esc(provider.id)}" value="${esc(provider.timeout_seconds ?? '')}"></label></div>`).join(''); document.getElementById('field-config').innerHTML = (window.adminFields || []).map(field => { const override = fieldOverrides[field.field] || {}; const enabled = override.enabled !== false; return `<label class="pill" title="${esc(field.label)}"><input type="checkbox" data-field-enabled="${esc(field.field)}" ${enabled ? 'checked' : ''}> ${esc(field.field)}${field.scoring ? ' · 评分' : ''}</label>`; }).join('') || '<span class="muted">字段元数据尚未加载</span>'; document.getElementById('provider-config-json').textContent = JSON.stringify(config, null, 2); }
+    function collectProviderConfig() { const providers = [...document.querySelectorAll('[data-provider-enabled]')].map(input => { const id = input.dataset.providerEnabled; const timeout = document.querySelector(`[data-provider-timeout="${id}"]`).value; return { id, enabled: input.checked, order: Number(document.querySelector(`[data-provider-order="${id}"]`).value), timeout_seconds: timeout === '' ? null : Number(timeout) }; }); const field_overrides = Object.fromEntries([...document.querySelectorAll('[data-field-enabled]')].map(input => [input.dataset.fieldEnabled, { enabled: input.checked }])); return { providers, field_overrides, public_custom_providers_enabled: Boolean(document.querySelector('[data-public-custom-providers-enabled]')?.checked), require_custom_provider_preview_ok: Boolean(document.querySelector('[data-require-custom-provider-preview-ok]')?.checked) }; }
+    async function loadProviderConfig() { renderProviderConfig(await loadJson(endpoints.providerConfig)); }
+    async function reloadCatalogs() { const [providers, fields] = await Promise.all([loadJson(endpoints.providers), loadJson(endpoints.fields)]); window.adminFields = fields; renderProviders(providers); renderFields(fields); }
+    function renderProviders(providers) { document.getElementById('providers').innerHTML = providers.map(provider => `<div class="card" data-provider-card="${esc(provider.id)}"><h3>${esc(provider.order)}. ${esc(provider.id)}${provider.custom ? ' · 自定义' : ''}</h3><p><span class="pill">${provider.enabled ? '启用' : '停用'}</span><span class="pill">${esc(provider.role)}</span><span class="pill">${esc(provider.fallback_phase)}</span></p><p class="muted">${esc(provider.endpoint)}</p><p>Key: <code>${esc(provider.key_name || 'none')}</code> · <span class="${provider.key_configured ? 'ok' : 'warn'}">${provider.key_configured ? '已配置' : '未配置/无需'}</span></p><p class="small">字段：${pills(provider.provides)}</p></div>`).join(''); }
+    function renderFields(fields) { document.getElementById('fields').innerHTML = fields.map(field => `<tr><td><strong>${esc(field.field)}</strong>${field.custom ? ' <span class="pill">自定义</span>' : ''}<br><span class="muted">${esc(field.label)}</span></td><td>${esc(field.source_type)}</td><td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td><td>${pills(field.used_for)}</td><td>${providerMap(field.providers)}</td></tr>`).join(''); }
+    async function runLookup(target) { renderLookup(await loadJson(`${endpoints.lookup}?target=${encodeURIComponent(target)}`)); }
+    async function loadJson(url) { const response = await fetch(url); if (!response.ok) throw new Error(`${url} ${response.status}`); return response.json(); }
+    async function boot() { const [settings, providers, fields, status] = await Promise.all([loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields), loadJson(endpoints.configStatus)]); renderConfigStatus(status); renderStatusSummary(status, providers); window.adminFields = fields; document.getElementById('settings').innerHTML = `<h3>运行配置</h3>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}<h3>Keys</h3>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}`; renderProviders(providers); renderFields(fields); document.getElementById('lookup-form').addEventListener('submit', event => { event.preventDefault(); runLookup(document.getElementById('lookup-target').value.trim()).catch(error => { document.getElementById('lookup-json').textContent = `查询失败：${error.message}`; }); }); document.getElementById('custom-provider-form').addEventListener('submit', async event => { event.preventDefault(); const response = await fetch(endpoints.customProviders, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(collectCustomProviderForm())}); if (!response.ok) throw new Error(`新增 Provider 失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); }); document.getElementById('custom-provider-preview-form').addEventListener('submit', async event => { event.preventDefault(); const providerId = document.getElementById('custom-provider-preview-id').value.trim(); const payload = providerId ? { ip: document.getElementById('custom-provider-preview-ip').value.trim(), provider_id: providerId } : { ip: document.getElementById('custom-provider-preview-ip').value.trim(), provider: collectCustomProviderForm() }; const response = await fetch(endpoints.customProviderPreview, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)}); const body = await response.json(); document.getElementById('custom-provider-preview-json').textContent = JSON.stringify(body, null, 2); renderProviderConfig(await loadJson(endpoints.providerConfig)); if (!response.ok) throw new Error(`测试 Provider 失败 ${response.status}`); }); document.getElementById('custom-field-form').addEventListener('submit', async event => { event.preventDefault(); const response = await fetch(endpoints.customFields, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ field: document.getElementById('custom-field-name').value.trim(), label: document.getElementById('custom-field-label').value.trim(), type: document.getElementById('custom-field-type').value.trim() || 'string' })}); if (!response.ok) throw new Error(`新增字段失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); }); document.getElementById('save-provider-config').addEventListener('click', async () => { const response = await fetch(endpoints.providerConfig, {method:'PUT', headers:{'content-type':'application/json'}, body: JSON.stringify(collectProviderConfig())}); if (!response.ok) throw new Error(`保存失败 ${response.status}`); renderProviderConfig(await response.json()); await refreshConfigStatus(); }); document.getElementById('reset-provider-config').addEventListener('click', async () => { const response = await fetch(`${endpoints.providerConfig}/reset`, {method:'POST'}); if (!response.ok) throw new Error(`重置失败 ${response.status}`); renderProviderConfig(await response.json()); await refreshConfigStatus(); }); loadProviderConfig().catch(error => { document.getElementById('provider-config-json').textContent = `配置加载失败：${error.message}`; }); }
+    boot().catch(error => { const node = document.getElementById('error'); node.style.display = 'block'; node.textContent = `后台数据加载失败：${error.message}`; });
   </script>
 </body>
 </html>

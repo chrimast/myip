@@ -17,6 +17,24 @@ def test_admin_page_serves_provider_management_shell():
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
     assert "Provider 管理" in body
+    assert "管理控制台" in body
+    assert "1. 总览" in body
+    assert "2. 公开接口控制" in body
+    assert "3. Provider 管理" in body
+    assert "4. 自定义扩展" in body
+    assert "高级调试" in body
+    assert "data-advanced-debug" in body
+    assert "当前公开接口正在使用" in body
+    assert "启用 Provider" in body
+    assert "验证风险" in body
+    assert "Provider 卡片" in body
+    assert "data-provider-card" in body
+    assert "步骤 1：基本信息" in body
+    assert "步骤 2：Endpoint" in body
+    assert "步骤 3：字段映射" in body
+    assert "步骤 4：测试验证" in body
+    assert "步骤 5：启用" in body
+    assert "字段管理" in body
     assert "字段管理" in body
     assert "/api/admin/settings" in body
     assert "/api/admin/providers" in body
