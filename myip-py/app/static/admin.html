@@ -179,6 +179,7 @@
         <p>配置文件: <code>${esc(status.storage_path)}</code></p>
         <p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p>
         <p>公开自定义 Provider: ${status.public_custom_providers_enabled ? '<span class="warn">已允许</span>' : '<span class="ok">未允许</span>'}</p>
+        <div data-public-custom-provider-warnings>${pills(status.public_custom_provider_warnings || [])}</div>
         ${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}
       `;
     }

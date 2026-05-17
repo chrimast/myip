@@ -113,6 +113,7 @@ def config_status() -> dict:
     config = read_provider_config()
     uses_admin_config = bool(config["exists"])
     public_custom = bool(config.get("public_custom_providers_enabled"))
+    public_custom_warnings = _public_custom_provider_warnings(config, public_custom)
     warning = None
     if uses_admin_config:
         warning = (
@@ -120,14 +121,34 @@ def config_status() -> dict:
             if public_custom
             else "保存的后台 Provider 配置正在影响公开 /api/ip"
         )
+        if public_custom_warnings:
+            warning = f"{warning}；公开自定义 Provider 存在验证风险"
     return {
         "public_lookup_mode": "admin-config-chain" if uses_admin_config else "default-production-chain",
         "uses_admin_provider_config": uses_admin_config,
         "provider_config_exists": uses_admin_config,
         "public_custom_providers_enabled": public_custom,
+        "public_custom_provider_warnings": public_custom_warnings,
         "storage_path": config["storage_path"],
         "warning": warning,
     }
+
+
+def _public_custom_provider_warnings(config: dict, public_custom: bool) -> list[str]:
+    if not public_custom:
+        return []
+    custom_providers = {provider["id"]: provider for provider in config.get("custom_providers", [])}
+    warnings = []
+    for provider_config in config.get("providers", []):
+        provider_id = provider_config.get("id")
+        if not provider_config.get("enabled") or provider_id not in custom_providers:
+            continue
+        last_preview = custom_providers[provider_id].get("last_preview")
+        if not last_preview:
+            warnings.append(f"{provider_id} 最近未验证")
+        elif last_preview.get("status") != "ok":
+            warnings.append(f"{provider_id} 最近验证失败")
+    return warnings
 
 
 def admin_ip_lookup_provider():

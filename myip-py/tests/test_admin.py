@@ -41,6 +41,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "可参与后台" in body
     assert "允许自定义 Provider 用于公开接口" in body
     assert "data-public-custom-providers-enabled" in body
+    assert "data-public-custom-provider-warnings" in body
     assert "最后验证" in body
     assert "data-preview-status" in body
 
@@ -909,6 +910,7 @@ def test_admin_config_status_reports_default_public_lookup_mode(tmp_path, monkey
     assert body["uses_admin_provider_config"] is False
     assert body["provider_config_exists"] is False
     assert body["public_custom_providers_enabled"] is False
+    assert body["public_custom_provider_warnings"] == []
     assert body["storage_path"] == str(config_path)
     assert body["warning"] is None
 
@@ -927,6 +929,7 @@ def test_admin_config_status_reports_admin_config_public_lookup_mode(tmp_path, m
     assert body["uses_admin_provider_config"] is True
     assert body["provider_config_exists"] is True
     assert body["public_custom_providers_enabled"] is False
+    assert body["public_custom_provider_warnings"] == []
     assert body["warning"] == "保存的后台 Provider 配置正在影响公开 /api/ip"
 
 
@@ -944,7 +947,76 @@ def test_admin_config_status_warns_when_public_custom_providers_enabled(tmp_path
     assert response.status_code == 200
     body = response.json()
     assert body["public_custom_providers_enabled"] is True
+    assert body["public_custom_provider_warnings"] == []
     assert body["warning"] == "保存的后台 Provider 配置正在影响公开 /api/ip，且公开接口允许自定义 Provider"
+
+
+def test_admin_config_status_warns_about_enabled_unverified_public_custom_provider(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "unverified-provider",
+            "name": "Unverified Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country"],
+            "field_paths": {"country": ["country"]},
+        },
+    )
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "public_custom_providers_enabled": True,
+            "providers": [{"id": "unverified-provider", "enabled": True, "order": 1}],
+            "custom_providers": client.get("/api/admin/provider-config").json()["custom_providers"],
+        },
+    )
+
+    response = client.get("/api/admin/config-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["public_custom_provider_warnings"] == ["unverified-provider 最近未验证"]
+    assert body["warning"] == "保存的后台 Provider 配置正在影响公开 /api/ip，且公开接口允许自定义 Provider；公开自定义 Provider 存在验证风险"
+
+
+def test_admin_config_status_warns_about_enabled_failed_public_custom_provider(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "public_custom_providers_enabled": True,
+            "providers": [{"id": "failed-provider", "enabled": True, "order": 1}],
+            "custom_providers": [
+                {
+                    "id": "failed-provider",
+                    "name": "Failed Provider",
+                    "endpoint": "https://api.example.com/ip/{ip}",
+                    "provides": ["country"],
+                    "field_paths": {"country": ["country"]},
+                    "last_preview": {
+                        "status": "error",
+                        "ip": "8.8.8.8",
+                        "checked_at": "2026-05-17T00:00:00+00:00",
+                        "normalized_fields": [],
+                        "missing_fields": ["country"],
+                        "error": "custom provider request failed",
+                    },
+                }
+            ],
+        },
+    )
+
+    response = client.get("/api/admin/config-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["public_custom_provider_warnings"] == ["failed-provider 最近验证失败"]
+    assert "公开自定义 Provider 存在验证风险" in body["warning"]
 
 def test_admin_provider_config_reset_removes_saved_file(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
