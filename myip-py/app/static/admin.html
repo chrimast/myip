@@ -202,7 +202,7 @@
     }
     function renderCustomMetadata(config) {
       document.getElementById('custom-provider-list').innerHTML = (config.custom_providers || [])
-        .map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <button type="button" data-load-custom-provider="${esc(provider.id)}">载入</button> <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`)
+        .map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <span data-preview-status="${esc(provider.id)}">最后验证: ${provider.last_preview ? `${esc(provider.last_preview.status)} · ${esc(provider.last_preview.ip)} · ${esc(provider.last_preview.checked_at)}` : '未验证'}</span> <button type="button" data-load-custom-provider="${esc(provider.id)}">载入</button> <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`)
         .join('') || '<span class="muted">暂无自定义 Provider</span>';
       document.getElementById('custom-field-list').innerHTML = (config.custom_fields || [])
         .map(field => `<span class="pill"><strong>${esc(field.field)}</strong> ${esc(field.label)} · ${esc(field.type)} <button type="button" data-delete-custom-field="${esc(field.field)}">删除</button></span>`)
@@ -343,7 +343,11 @@
         })});
         const body = await response.json();
         document.getElementById('custom-provider-preview-json').textContent = JSON.stringify(body, null, 2);
-        if (!response.ok) throw new Error(`测试 Provider 失败 ${response.status}`);
+        if (response.ok) renderProviderConfig(await loadJson(endpoints.providerConfig));
+        if (!response.ok) {
+          renderProviderConfig(await loadJson(endpoints.providerConfig));
+          throw new Error(`测试 Provider 失败 ${response.status}`);
+        }
       });
       document.getElementById('custom-field-form').addEventListener('submit', async event => {
         event.preventDefault();

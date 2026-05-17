@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -554,6 +555,30 @@ def delete_custom_field(field: str) -> dict[str, Any]:
     return write_provider_config({**_persistable_config(config), "custom_fields": fields})
 
 
+def record_custom_provider_preview(provider_id: str, preview: dict[str, Any]) -> dict[str, Any]:
+    config = read_provider_config()
+    providers = []
+    found = False
+    for provider in config["custom_providers"]:
+        if provider["id"] != provider_id:
+            providers.append(provider)
+            continue
+        found = True
+        providers.append({**provider, "last_preview": _preview_metadata(preview)})
+    if not found:
+        raise HTTPException(status_code=422, detail=f"unknown custom provider: {provider_id}")
+    write_provider_config({**_persistable_config(config), "custom_providers": providers})
+    return preview
+
+
+def custom_provider_by_id(provider_id: str) -> dict[str, Any]:
+    config = read_provider_config()
+    for provider in config["custom_providers"]:
+        if provider["id"] == provider_id:
+            return provider
+    raise HTTPException(status_code=422, detail=f"unknown custom provider: {provider_id}")
+
+
 def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "providers": config["providers"],
@@ -595,6 +620,7 @@ def _normalize_custom_provider(payload: Any) -> dict[str, Any]:
         "provides": provides,
         "field_paths": _field_path_map(payload.get("field_paths", {}), provides),
         "transforms": _transform_map(payload.get("transforms", {}), provides),
+        "last_preview": _last_preview(payload.get("last_preview")),
         "custom": True,
     }
 
@@ -675,6 +701,43 @@ def _providers_map(value: Any) -> dict[str, list[str]]:
 
 def normalize_custom_provider_preview(payload: Any) -> dict[str, Any]:
     return _normalize_custom_provider(payload)
+
+
+def _preview_metadata(preview: dict[str, Any]) -> dict[str, Any]:
+    return _last_preview(
+        {
+            "status": preview.get("status", "ok"),
+            "ip": preview.get("ip"),
+            "checked_at": _utc_now_iso(),
+            "normalized_fields": sorted(preview.get("normalized", {}).keys()),
+            "missing_fields": preview.get("missing_fields", []),
+            "error": preview.get("error"),
+        }
+    )
+
+
+def _last_preview(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="last_preview must be an object")
+    status = value.get("status")
+    if status not in {"ok", "error"}:
+        raise HTTPException(status_code=422, detail="last_preview status is invalid")
+    metadata = {
+        "status": status,
+        "ip": _non_empty_text(value.get("ip"), "last_preview.ip"),
+        "checked_at": _non_empty_text(value.get("checked_at"), "last_preview.checked_at"),
+        "normalized_fields": _string_list(value.get("normalized_fields", []), "normalized_fields"),
+        "missing_fields": _string_list(value.get("missing_fields", []), "missing_fields"),
+    }
+    if value.get("error"):
+        metadata["error"] = _non_empty_text(value.get("error"), "last_preview.error")
+    return metadata
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def _positive_int(value: Any, field: str) -> int:

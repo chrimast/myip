@@ -1,3 +1,5 @@
+import re
+
 import respx
 from fastapi.testclient import TestClient
 
@@ -39,6 +41,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "可参与后台" in body
     assert "允许自定义 Provider 用于公开接口" in body
     assert "data-public-custom-providers-enabled" in body
+    assert "最后验证" in body
+    assert "data-preview-status" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -539,8 +543,27 @@ def test_public_lookup_can_execute_custom_json_provider_when_explicitly_enabled(
     assert "fraud_score" not in body
 
 
-def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields():
+def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
     client = TestClient(app)
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "example-provider",
+            "name": "Example Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country", "asn", "asn_owner", "is_proxy", "fraud_score"],
+            "field_paths": {
+                "country": ["location.country"],
+                "asn": ["asn.number"],
+                "asn_owner": ["asn.name"],
+                "is_proxy": ["security.proxy"],
+                "fraud_score": ["risk.score"],
+            },
+            "transforms": {"asn": "asn_int", "is_proxy": "bool", "fraud_score": "int"},
+        },
+    )
 
     with respx.mock(assert_all_called=True) as router:
         router.get("https://api.example.com/ip/8.8.8.8").respond(
@@ -554,23 +577,7 @@ def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields()
         )
         response = client.post(
             "/api/admin/custom-providers/preview",
-            json={
-                "ip": "8.8.8.8",
-                "provider": {
-                    "id": "example-provider",
-                    "name": "Example Provider",
-                    "endpoint": "https://api.example.com/ip/{ip}",
-                    "provides": ["country", "asn", "asn_owner", "is_proxy", "fraud_score"],
-                    "field_paths": {
-                        "country": ["location.country"],
-                        "asn": ["asn.number"],
-                        "asn_owner": ["asn.name"],
-                        "is_proxy": ["security.proxy"],
-                        "fraud_score": ["risk.score"],
-                    },
-                    "transforms": {"asn": "asn_int", "is_proxy": "bool", "fraud_score": "int"},
-                },
-            },
+            json={"ip": "8.8.8.8", "provider_id": "example-provider"},
         )
 
     assert response.status_code == 200
@@ -585,6 +592,43 @@ def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields()
         "fraud_score": 42,
     }
     assert body["raw"]["asn"]["name"] == "Google LLC"
+    provider = client.get("/api/admin/provider-config").json()["custom_providers"][0]
+    assert provider["last_preview"]["status"] == "ok"
+    assert provider["last_preview"]["ip"] == "8.8.8.8"
+    assert provider["last_preview"]["normalized_fields"] == ["asn", "asn_owner", "country", "fraud_score", "is_proxy"]
+    assert provider["last_preview"]["missing_fields"] == []
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T", provider["last_preview"]["checked_at"])
+
+
+def test_admin_custom_provider_preview_records_failure_for_saved_provider(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "failing-provider",
+            "name": "Failing Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country"],
+            "field_paths": {"country": ["country"]},
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("https://api.example.com/ip/8.8.8.8").respond(500, json={"error": "down"})
+        response = client.post(
+            "/api/admin/custom-providers/preview",
+            json={"ip": "8.8.8.8", "provider_id": "failing-provider"},
+        )
+
+    assert response.status_code == 502
+    provider = client.get("/api/admin/provider-config").json()["custom_providers"][0]
+    assert provider["last_preview"]["status"] == "error"
+    assert provider["last_preview"]["ip"] == "8.8.8.8"
+    assert "custom provider request failed" in provider["last_preview"]["error"]
+    assert provider["last_preview"]["normalized_fields"] == []
+    assert provider["last_preview"]["missing_fields"] == ["country"]
 
 
 def test_admin_custom_provider_preview_uses_first_available_path_and_reports_missing():

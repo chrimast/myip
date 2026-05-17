@@ -8,10 +8,12 @@ from app.services.admin_config import (
     admin_fields,
     admin_providers,
     admin_settings,
+    custom_provider_by_id,
     delete_custom_field,
     delete_custom_provider,
     PROVIDER_DEFINITIONS,
     read_provider_config,
+    record_custom_provider_preview,
     reset_provider_config,
     write_provider_config,
 )
@@ -65,7 +67,25 @@ def create_custom_provider(payload: dict) -> dict:
 
 @router.post("/custom-providers/preview")
 def custom_provider_preview(payload: dict) -> dict:
-    return preview_custom_provider(payload)
+    provider_id = payload.get("provider_id")
+    if not provider_id:
+        return preview_custom_provider(payload)
+    provider = custom_provider_by_id(provider_id)
+    try:
+        preview = preview_custom_provider({"ip": payload.get("ip"), "provider": provider})
+    except HTTPException as exc:
+        record_custom_provider_preview(
+            provider_id,
+            {
+                "status": "error",
+                "ip": payload.get("ip"),
+                "normalized": {},
+                "missing_fields": list(provider.get("field_paths", {}).keys()),
+                "error": str(exc.detail),
+            },
+        )
+        raise
+    return record_custom_provider_preview(provider_id, {**preview, "status": "ok", "ip": payload.get("ip")})
 
 
 @router.delete("/custom-providers/{provider_id}")
