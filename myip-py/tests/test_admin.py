@@ -64,6 +64,18 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-public-custom-provider-warnings" in body
     assert "最后验证" in body
     assert "data-preview-status" in body
+    assert "操作反馈" in body
+    assert "id=\"admin-feedback\"" in body
+    assert "data-confirm-reset" in body
+    assert "重置会删除当前保存的后台配置" in body
+    assert "data-form-help" in body
+    assert "示例：" in body
+    assert "JSON 校验" in body
+    assert "没有已保存的自定义 Provider" in body
+    assert "没有已保存的自定义字段" in body
+    assert "清空表单" in body
+    assert "data-clear-custom-provider-form" in body
+    assert "data-clear-custom-field-form" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
