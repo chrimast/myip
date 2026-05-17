@@ -92,12 +92,21 @@ def reset_saved_provider_config() -> dict:
 def config_status() -> dict:
     config = read_provider_config()
     uses_admin_config = bool(config["exists"])
+    public_custom = bool(config.get("public_custom_providers_enabled"))
+    warning = None
+    if uses_admin_config:
+        warning = (
+            "保存的后台 Provider 配置正在影响公开 /api/ip，且公开接口允许自定义 Provider"
+            if public_custom
+            else "保存的后台 Provider 配置正在影响公开 /api/ip"
+        )
     return {
         "public_lookup_mode": "admin-config-chain" if uses_admin_config else "default-production-chain",
         "uses_admin_provider_config": uses_admin_config,
         "provider_config_exists": uses_admin_config,
+        "public_custom_providers_enabled": public_custom,
         "storage_path": config["storage_path"],
-        "warning": "保存的后台 Provider 配置正在影响公开 /api/ip" if uses_admin_config else None,
+        "warning": warning,
     }
 
 

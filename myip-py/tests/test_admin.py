@@ -37,7 +37,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "测试自定义 Provider" in body
     assert "/api/admin/custom-providers/preview" in body
     assert "可参与后台" in body
-    assert "仍不会执行于公开" in body
+    assert "允许自定义 Provider 用于公开接口" in body
+    assert "data-public-custom-providers-enabled" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -426,7 +427,7 @@ def test_admin_lookup_can_execute_enabled_custom_json_provider(tmp_path, monkeyp
     ]
 
 
-def test_public_lookup_does_not_execute_enabled_custom_json_provider(tmp_path, monkeypatch):
+def test_public_lookup_does_not_execute_enabled_custom_json_provider_by_default(tmp_path, monkeypatch):
     from app.api.ip import clear_ip_lookup_cache
 
     config_path = tmp_path / "provider-config.json"
@@ -467,6 +468,75 @@ def test_public_lookup_does_not_execute_enabled_custom_json_provider(tmp_path, m
 
     assert response.status_code == 502
     assert route.called is False
+
+
+def test_public_lookup_can_execute_custom_json_provider_when_explicitly_enabled(tmp_path, monkeypatch):
+    from app.api.ip import clear_ip_lookup_cache
+
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    clear_ip_lookup_cache()
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "public-custom-provider",
+            "name": "Public Custom Provider",
+            "enabled": True,
+            "order": 1,
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country", "country_code", "asn", "asn_owner", "is_proxy", "is_hosting", "fraud_score"],
+            "field_paths": {
+                "country": ["location.country"],
+                "country_code": ["location.country_code"],
+                "asn": ["asn.number"],
+                "asn_owner": ["asn.name"],
+                "is_proxy": ["security.proxy"],
+                "is_hosting": ["security.hosting"],
+                "fraud_score": ["risk.score"],
+            },
+            "transforms": {"asn": "asn_int", "is_proxy": "bool", "is_hosting": "bool", "fraud_score": "int"},
+        },
+    )
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "public_custom_providers_enabled": True,
+            "providers": [
+                {"id": "ipapi.is", "enabled": False, "order": 99},
+                {"id": "ipwho.is", "enabled": False, "order": 99},
+                {"id": "ip-api.com", "enabled": False, "order": 99},
+                {"id": "ipapi.org", "enabled": False, "order": 99},
+                {"id": "ipinfo.io", "enabled": False, "order": 99},
+                {"id": "ipdata.co", "enabled": False, "order": 99},
+                {"id": "public-custom-provider", "enabled": True, "order": 1, "timeout_seconds": 2.0},
+            ],
+            "custom_providers": client.get("/api/admin/provider-config").json()["custom_providers"],
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("https://api.example.com/ip/8.8.8.8").respond(
+            200,
+            json={
+                "location": {"country": "United States", "country_code": "US"},
+                "asn": {"number": "AS15169", "name": "Google LLC"},
+                "security": {"proxy": "false", "hosting": "true"},
+                "risk": {"score": "42"},
+            },
+        )
+        response = client.get("/api/ip?8.8.8.8")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["geo_provider"] == "public-custom-provider"
+    assert body["country"] == "United States"
+    assert body["countryCode"] == "US"
+    assert body["asn_owner"] == "Google LLC"
+    assert body["as"] == "AS15169"
+    assert body["proxy"] is False
+    assert body["hosting"] is True
+    assert "fraud_score" not in body
 
 
 def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields():
@@ -732,6 +802,9 @@ def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path
     assert body["providers"][0]["order"] == 1
     assert body["providers"][0]["timeout_seconds"] is None
     assert body["field_overrides"] == {}
+    assert body["custom_providers"] == []
+    assert body["custom_fields"] == []
+    assert body["public_custom_providers_enabled"] is False
     assert not config_path.exists()
 
 
@@ -748,6 +821,7 @@ def test_admin_provider_config_api_persists_safe_overrides(tmp_path, monkeypatch
             "network_type": {"enabled": True},
             "is_crawler": {"enabled": False},
         },
+        "public_custom_providers_enabled": True,
     }
 
     response = client.put("/api/admin/provider-config", json=payload)
@@ -762,6 +836,7 @@ def test_admin_provider_config_api_persists_safe_overrides(tmp_path, monkeypatch
     assert ipapi["order"] == 2
     assert ipapi["timeout_seconds"] == 3.5
     assert body["field_overrides"]["is_crawler"]["enabled"] is False
+    assert body["public_custom_providers_enabled"] is True
     assert "key" not in config_path.read_text(encoding="utf-8").lower()
 
 
@@ -789,6 +864,7 @@ def test_admin_config_status_reports_default_public_lookup_mode(tmp_path, monkey
     assert body["public_lookup_mode"] == "default-production-chain"
     assert body["uses_admin_provider_config"] is False
     assert body["provider_config_exists"] is False
+    assert body["public_custom_providers_enabled"] is False
     assert body["storage_path"] == str(config_path)
     assert body["warning"] is None
 
@@ -806,7 +882,25 @@ def test_admin_config_status_reports_admin_config_public_lookup_mode(tmp_path, m
     assert body["public_lookup_mode"] == "admin-config-chain"
     assert body["uses_admin_provider_config"] is True
     assert body["provider_config_exists"] is True
+    assert body["public_custom_providers_enabled"] is False
     assert body["warning"] == "保存的后台 Provider 配置正在影响公开 /api/ip"
+
+
+def test_admin_config_status_warns_when_public_custom_providers_enabled(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.put(
+        "/api/admin/provider-config",
+        json={"providers": [{"id": "ip-api.com", "enabled": True, "order": 1}], "public_custom_providers_enabled": True},
+    )
+
+    response = client.get("/api/admin/config-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["public_custom_providers_enabled"] is True
+    assert body["warning"] == "保存的后台 Provider 配置正在影响公开 /api/ip，且公开接口允许自定义 Provider"
 
 def test_admin_provider_config_reset_removes_saved_file(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"

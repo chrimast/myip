@@ -18,11 +18,21 @@ LOOKUP_METHODS = {
 }
 
 
-def configured_ip_lookup_provider() -> IPLookupProvider:
-    return ConfiguredIPLookupProvider()
+def configured_ip_lookup_provider(*, include_custom: bool = False) -> IPLookupProvider:
+    return ConfiguredIPLookupProvider(include_custom=include_custom)
 
 
 def default_provider_factory(provider_id: str, timeout_seconds: float | None) -> IPLookupProvider:
+    if provider_id not in LOOKUP_METHODS:
+        custom_provider = next(
+            (provider for provider in read_provider_config()["custom_providers"] if provider["id"] == provider_id),
+            None,
+        )
+        if not custom_provider:
+            raise KeyError(provider_id)
+        from app.services.custom_provider_preview import GenericJSONLookupProvider
+
+        return GenericJSONLookupProvider(custom_provider, timeout_seconds)
     provider = IPAPIIsLookupProvider()
     if timeout_seconds is not None:
         provider.settings.myip_provider_timeout_seconds = timeout_seconds

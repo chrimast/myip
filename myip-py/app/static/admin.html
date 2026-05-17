@@ -73,6 +73,8 @@
       <h2>Provider 配置</h2>
       <div class="card">
         <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。不会保存或展示 API key 明文。</p>
+        <label class="pill"><input type="checkbox" data-public-custom-providers-enabled> 允许自定义 Provider 用于公开接口</label>
+        <p class="small warn">只有勾选此项后，已启用的自定义 Provider 才会进入公开 <code>/api/ip</code>；否则只参与后台 <code>/api/admin/lookup</code> 调试。</p>
         <div id="provider-config"></div>
         <h2 style="margin-top:18px">字段开关</h2>
         <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
@@ -86,7 +88,7 @@
     <section>
       <h2>自定义 Provider</h2>
       <div class="card">
-        <p class="small">当前阶段可保存元数据和字段映射、测试字段提取预览；启用并保存后可参与后台 <code>/api/admin/lookup</code> 调试查询，但仍不会执行于公开 <code>/api/ip</code>。</p>
+        <p class="small">当前阶段可保存元数据和字段映射、测试字段提取预览；启用并保存后可参与后台 <code>/api/admin/lookup</code> 调试查询。若需要进入公开 <code>/api/ip</code>，还必须在 Provider 配置中显式勾选“允许自定义 Provider 用于公开接口”。</p>
         <form id="custom-provider-form">
           <input id="custom-provider-id" placeholder="provider id，例如 example-provider">
           <input id="custom-provider-name" placeholder="显示名称">
@@ -176,6 +178,7 @@
         <p><strong>公开接口模式</strong>: <span class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(status.public_lookup_mode)}</span></p>
         <p>配置文件: <code>${esc(status.storage_path)}</code></p>
         <p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p>
+        <p>公开自定义 Provider: ${status.public_custom_providers_enabled ? '<span class="warn">已允许</span>' : '<span class="ok">未允许</span>'}</p>
         ${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}
       `;
     }
@@ -231,6 +234,8 @@
     function renderProviderConfig(config) {
       const fieldOverrides = config.field_overrides || {};
       renderCustomMetadata(config);
+      const publicCustomToggle = document.querySelector('[data-public-custom-providers-enabled]');
+      if (publicCustomToggle) publicCustomToggle.checked = Boolean(config.public_custom_providers_enabled);
       document.getElementById('provider-config').innerHTML = (config.providers || []).map(provider => `
         <label class="pill"><input type="checkbox" data-provider-enabled="${esc(provider.id)}" ${provider.enabled ? 'checked' : ''}> ${esc(provider.id)}</label>
         <label class="pill">顺序 <input style="width:70px;padding:4px" type="number" min="1" data-provider-order="${esc(provider.id)}" value="${esc(provider.order)}"></label>
@@ -258,7 +263,11 @@
         input.dataset.fieldEnabled,
         { enabled: input.checked }
       ]));
-      return { providers, field_overrides };
+      return {
+        providers,
+        field_overrides,
+        public_custom_providers_enabled: Boolean(document.querySelector('[data-public-custom-providers-enabled]')?.checked)
+      };
     }
     async function loadProviderConfig() {
       renderProviderConfig(await loadJson(endpoints.providerConfig));

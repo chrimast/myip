@@ -432,6 +432,7 @@ def default_provider_config() -> dict[str, Any]:
         "field_overrides": {},
         "custom_providers": [],
         "custom_fields": [],
+        "public_custom_providers_enabled": False,
     }
 
 
@@ -519,6 +520,7 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "field_overrides": normalized_fields,
         "custom_providers": custom_providers,
         "custom_fields": custom_fields,
+        "public_custom_providers_enabled": bool(payload.get("public_custom_providers_enabled", False)),
     }
 
 
@@ -558,6 +560,7 @@ def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
         "field_overrides": config["field_overrides"],
         "custom_providers": config["custom_providers"],
         "custom_fields": config["custom_fields"],
+        "public_custom_providers_enabled": config.get("public_custom_providers_enabled", False),
     }
 
 
