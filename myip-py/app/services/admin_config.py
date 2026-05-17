@@ -463,9 +463,23 @@ def reset_provider_config() -> dict[str, Any]:
 
 
 def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
-    known_provider_ids = {provider["id"] for provider in PROVIDER_DEFINITIONS}
-    known_fields = {field["field"] for field in FIELD_DEFINITIONS}
-    defaults_by_id = {provider["id"]: provider for provider in default_provider_config()["providers"]}
+    custom_providers = _normalize_custom_providers(payload.get("custom_providers", []))
+    custom_fields = _normalize_custom_fields(payload.get("custom_fields", []))
+    custom_provider_defaults = {
+        provider["id"]: {
+            "id": provider["id"],
+            "enabled": bool(provider.get("enabled", False)),
+            "order": provider.get("order", len(PROVIDER_DEFINITIONS) + 100),
+            "timeout_seconds": provider.get("timeout_seconds"),
+        }
+        for provider in custom_providers
+    }
+    known_provider_ids = {provider["id"] for provider in PROVIDER_DEFINITIONS} | set(custom_provider_defaults)
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in custom_fields}
+    defaults_by_id = {
+        **{provider["id"]: provider for provider in default_provider_config()["providers"]},
+        **custom_provider_defaults,
+    }
 
     incoming_providers = payload.get("providers", [])
     if not isinstance(incoming_providers, list):
@@ -503,8 +517,8 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "version": CONFIG_VERSION,
         "providers": sorted(merged_providers.values(), key=lambda item: (item["order"], item["id"])),
         "field_overrides": normalized_fields,
-        "custom_providers": _normalize_custom_providers(payload.get("custom_providers", [])),
-        "custom_fields": _normalize_custom_fields(payload.get("custom_fields", [])),
+        "custom_providers": custom_providers,
+        "custom_fields": custom_fields,
     }
 
 
@@ -518,7 +532,10 @@ def add_custom_provider(payload: dict[str, Any]) -> dict[str, Any]:
 def delete_custom_provider(provider_id: str) -> dict[str, Any]:
     config = read_provider_config()
     providers = [provider for provider in config["custom_providers"] if provider["id"] != provider_id]
-    return write_provider_config({**_persistable_config(config), "custom_providers": providers})
+    configured_providers = [provider for provider in config["providers"] if provider["id"] != provider_id]
+    return write_provider_config(
+        {**_persistable_config(config), "providers": configured_providers, "custom_providers": providers}
+    )
 
 
 def add_custom_field(payload: dict[str, Any]) -> dict[str, Any]:

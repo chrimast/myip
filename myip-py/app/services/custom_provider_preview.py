@@ -10,13 +10,43 @@ import httpx
 from fastapi import HTTPException
 
 from app.services.admin_config import normalize_custom_provider_preview
+from app.services.ip_lookup import IPInfo, IPLookupUnavailable
 
 ALLOWED_TRANSFORMS = {"string", "bool", "int", "float", "asn_int"}
+
+
+class GenericJSONLookupProvider:
+    def __init__(self, provider: dict[str, Any], timeout_seconds: float | None = None) -> None:
+        self.provider = normalize_custom_provider_preview({**provider, "timeout_seconds": timeout_seconds or provider.get("timeout_seconds")})
+
+    def lookup(self, ip: str) -> IPInfo:
+        preview = _run_custom_provider_request(ip, self.provider)
+        normalized = preview["normalized"]
+        payload: dict[str, Any] = {"ip": ip, "provider": self.provider["id"]}
+        for field, value in normalized.items():
+            if field == "asn" and isinstance(value, int):
+                payload[field] = f"AS{value}"
+            elif field in IPInfo.model_fields:
+                payload[field] = value
+        info = IPInfo(**payload)
+        info.field_sources = {
+            field: f"{self.provider['id']}:{path}"
+            for field, path in preview["field_sources"].items()
+            if field in IPInfo.model_fields
+        }
+        return info
 
 
 def preview_custom_provider(payload: dict[str, Any]) -> dict[str, Any]:
     ip = _valid_ip(payload.get("ip"))
     provider = normalize_custom_provider_preview(payload.get("provider"))
+    try:
+        return _run_custom_provider_request(ip, provider)
+    except IPLookupUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _run_custom_provider_request(ip: str, provider: dict[str, Any]) -> dict[str, Any]:
     transforms = _normalize_transforms(provider.get("transforms", {}))
     url = _safe_preview_url(provider["endpoint"], ip)
     try:
@@ -25,9 +55,9 @@ def preview_custom_provider(payload: dict[str, Any]) -> dict[str, Any]:
             response.raise_for_status()
             raw = response.json()
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"custom provider request failed: {exc}") from exc
+        raise IPLookupUnavailable(f"custom provider request failed: {exc}") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=502, detail="custom provider did not return JSON") from exc
+        raise IPLookupUnavailable("custom provider did not return JSON") from exc
 
     normalized, field_sources, missing_fields = extract_mapped_fields(raw, provider.get("field_paths", {}), transforms)
     return {

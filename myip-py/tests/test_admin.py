@@ -36,6 +36,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/custom-fields" in body
     assert "测试自定义 Provider" in body
     assert "/api/admin/custom-providers/preview" in body
+    assert "可参与后台" in body
+    assert "仍不会执行于公开" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
@@ -359,6 +361,112 @@ def test_admin_lookup_returns_502_when_all_enabled_providers_fail(tmp_path, monk
         app.dependency_overrides.clear()
 
     assert response.status_code == 502
+
+
+def test_admin_lookup_can_execute_enabled_custom_json_provider(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "example-provider",
+            "name": "Example Provider",
+            "enabled": True,
+            "order": 1,
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country", "country_code", "asn", "asn_owner", "isp", "is_proxy", "is_hosting"],
+            "field_paths": {
+                "country": ["location.country"],
+                "country_code": ["location.country_code"],
+                "asn": ["asn.number"],
+                "asn_owner": ["asn.name"],
+                "isp": ["company.name"],
+                "is_proxy": ["security.proxy"],
+                "is_hosting": ["security.hosting"],
+            },
+            "transforms": {"asn": "asn_int", "is_proxy": "bool", "is_hosting": "bool"},
+        },
+    )
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ipapi.is", "enabled": False, "order": 99},
+                {"id": "example-provider", "enabled": True, "order": 1, "timeout_seconds": 2.0},
+            ],
+            "custom_providers": client.get("/api/admin/provider-config").json()["custom_providers"],
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("https://api.example.com/ip/8.8.8.8").respond(
+            200,
+            json={
+                "location": {"country": "United States", "country_code": "US"},
+                "asn": {"number": "AS15169", "name": "Google LLC"},
+                "company": {"name": "Google"},
+                "security": {"proxy": "false", "hosting": "true"},
+            },
+        )
+        response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"]["provider"] == "example-provider"
+    assert body["result"]["country"] == "United States"
+    assert body["result"]["country_code"] == "US"
+    assert body["result"]["asn"] == "AS15169"
+    assert body["result"]["asn_owner"] == "Google LLC"
+    assert body["result"]["is_proxy"] is False
+    assert body["result"]["is_hosting"] is True
+    assert body["field_sources"]["asn_owner"] == "example-provider:asn.name"
+    assert body["debug"]["provider_attempts"] == [
+        {"provider": "example-provider", "status": "ok", "timeout_seconds": 2.0}
+    ]
+
+
+def test_public_lookup_does_not_execute_enabled_custom_json_provider(tmp_path, monkeypatch):
+    from app.api.ip import clear_ip_lookup_cache
+
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    clear_ip_lookup_cache()
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "public-blocked-provider",
+            "name": "Public Blocked Provider",
+            "enabled": True,
+            "order": 1,
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country"],
+            "field_paths": {"country": ["country"]},
+        },
+    )
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ipapi.is", "enabled": False, "order": 99},
+                {"id": "ipwho.is", "enabled": False, "order": 99},
+                {"id": "ip-api.com", "enabled": False, "order": 99},
+                {"id": "ipapi.org", "enabled": False, "order": 99},
+                {"id": "ipinfo.io", "enabled": False, "order": 99},
+                {"id": "ipdata.co", "enabled": False, "order": 99},
+                {"id": "public-blocked-provider", "enabled": True, "order": 1},
+            ],
+            "custom_providers": client.get("/api/admin/provider-config").json()["custom_providers"],
+        },
+    )
+
+    with respx.mock(assert_all_called=False) as router:
+        route = router.get("https://api.example.com/ip/8.8.8.8").respond(200, json={"country": "United States"})
+        response = client.get("/api/ip?8.8.8.8")
+
+    assert response.status_code == 502
+    assert route.called is False
 
 
 def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields():

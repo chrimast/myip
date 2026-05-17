@@ -15,7 +15,7 @@ from app.services.admin_config import (
     reset_provider_config,
     write_provider_config,
 )
-from app.services.custom_provider_preview import preview_custom_provider
+from app.services.custom_provider_preview import GenericJSONLookupProvider, preview_custom_provider
 from app.services.configured_ip_lookup import (
     apply_field_overrides,
     default_provider_factory,
@@ -102,7 +102,14 @@ def config_status() -> dict:
 
 
 def admin_ip_lookup_provider():
-    return default_provider_factory
+    custom_providers = {provider["id"]: provider for provider in read_provider_config()["custom_providers"]}
+
+    def provider_factory(provider_id: str, timeout_seconds: float | None):
+        if provider_id in custom_providers:
+            return GenericJSONLookupProvider(custom_providers[provider_id], timeout_seconds)
+        return default_provider_factory(provider_id, timeout_seconds)
+
+    return provider_factory
 
 
 @router.get("/lookup")
