@@ -23,6 +23,17 @@ def test_admin_page_serves_provider_management_shell():
     assert "3. Provider 管理" in body
     assert "4. 自定义扩展" in body
     assert "高级调试" in body
+    assert "5. 运行设置" in body
+    assert "缓存设置" in body
+    assert "访问限制设置" in body
+    assert "DNS / DoH 设置" in body
+    assert "BGP 图谱设置" in body
+    assert "data-runtime-settings" in body
+    assert "data-cache-settings" in body
+    assert "data-rate-limit-settings" in body
+    assert "data-dns-settings" in body
+    assert "data-bgp-settings" in body
+    assert "/api/admin/runtime-settings" in body
     assert "data-advanced-debug" in body
     assert "当前公开接口正在使用" in body
     assert "启用 Provider" in body
@@ -93,6 +104,83 @@ def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
     assert body["config"]["rate_limit_per_minute"] == 60
     assert body["config"]["provider_timeout_seconds"] == 8.0
     assert body["config"]["doh_providers"] == ["cloudflare", "google", "quad9"]
+
+
+def test_admin_runtime_settings_defaults_and_persistence(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    defaults = client.get("/api/admin/runtime-settings")
+
+    assert defaults.status_code == 200
+    assert defaults.json() == {
+        "cache": {"ip_enabled": True, "ip_ttl_seconds": 120, "bgp_enabled": True, "bgp_ttl_seconds": 300},
+        "rate_limit": {"ip_enabled": True, "ip_per_minute": 60, "bgp_enabled": False, "bgp_per_minute": 60},
+        "dns": {
+            "system_dns_enabled": False,
+            "doh_enabled": True,
+            "doh_providers": ["cloudflare", "google", "quad9"],
+            "timeout_seconds": 5.0,
+            "ip_version_preference": "ipv4_first",
+        },
+        "bgp": {
+            "enabled": True,
+            "default_upstream_limit": 20,
+            "max_upstream_limit": 50,
+            "show_tier1": True,
+            "show_edge_state": True,
+            "cache_ttl_seconds": 300,
+        },
+    }
+
+    saved = client.put(
+        "/api/admin/runtime-settings",
+        json={
+            "cache": {"ip_enabled": False, "ip_ttl_seconds": 30, "bgp_enabled": True, "bgp_ttl_seconds": 900},
+            "rate_limit": {"ip_enabled": True, "ip_per_minute": 120, "bgp_enabled": True, "bgp_per_minute": 30},
+            "dns": {
+                "system_dns_enabled": True,
+                "doh_enabled": True,
+                "doh_providers": ["quad9", "cloudflare"],
+                "timeout_seconds": 2.5,
+                "ip_version_preference": "ipv6_first",
+            },
+            "bgp": {
+                "enabled": True,
+                "default_upstream_limit": 15,
+                "max_upstream_limit": 40,
+                "show_tier1": False,
+                "show_edge_state": False,
+                "cache_ttl_seconds": 900,
+            },
+        },
+    )
+
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["cache"]["ip_enabled"] is False
+    assert body["rate_limit"]["bgp_enabled"] is True
+    assert body["dns"]["doh_providers"] == ["quad9", "cloudflare"]
+    assert body["dns"]["ip_version_preference"] == "ipv6_first"
+    assert body["bgp"]["max_upstream_limit"] == 40
+    assert client.get("/api/admin/provider-config").json()["runtime_settings"] == body
+
+
+def test_admin_runtime_settings_reject_invalid_values(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/admin/runtime-settings",
+        json={
+            "cache": {"ip_ttl_seconds": 0},
+            "dns": {"doh_providers": ["cloudflare", "unknown"], "ip_version_preference": "ipv10"},
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_admin_providers_api_describes_provider_order_keys_and_fields():

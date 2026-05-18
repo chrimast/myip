@@ -15,6 +15,7 @@ from app.services.admin_config import (
     read_provider_config,
     record_custom_provider_preview,
     reset_provider_config,
+    save_runtime_settings,
     write_provider_config,
 )
 from app.services.custom_provider_preview import GenericJSONLookupProvider, preview_custom_provider
@@ -53,6 +54,16 @@ def fields() -> list[dict]:
 @router.get("/provider-config")
 def provider_config() -> dict:
     return read_provider_config()
+
+
+@router.get("/runtime-settings")
+def runtime_settings() -> dict:
+    return read_provider_config()["runtime_settings"]
+
+
+@router.put("/runtime-settings")
+def update_runtime_settings(payload: dict) -> dict:
+    return save_runtime_settings(payload)
 
 
 @router.put("/provider-config")

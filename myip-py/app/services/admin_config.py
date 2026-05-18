@@ -433,6 +433,7 @@ def default_provider_config() -> dict[str, Any]:
         "field_overrides": {},
         "custom_providers": [],
         "custom_fields": [],
+        "runtime_settings": default_runtime_settings(),
         "public_custom_providers_enabled": False,
         "require_custom_provider_preview_ok": False,
     }
@@ -528,6 +529,7 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "field_overrides": normalized_fields,
         "custom_providers": custom_providers,
         "custom_fields": custom_fields,
+        "runtime_settings": _normalize_runtime_settings(payload.get("runtime_settings", default_runtime_settings())),
         "public_custom_providers_enabled": bool(payload.get("public_custom_providers_enabled", False)),
         "require_custom_provider_preview_ok": bool(payload.get("require_custom_provider_preview_ok", False)),
     }
@@ -593,8 +595,99 @@ def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
         "field_overrides": config["field_overrides"],
         "custom_providers": config["custom_providers"],
         "custom_fields": config["custom_fields"],
+        "runtime_settings": config.get("runtime_settings", default_runtime_settings()),
         "public_custom_providers_enabled": config.get("public_custom_providers_enabled", False),
         "require_custom_provider_preview_ok": config.get("require_custom_provider_preview_ok", False),
+    }
+
+
+def save_runtime_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    config = read_provider_config()
+    runtime_settings = _normalize_runtime_settings(payload)
+    write_provider_config({**_persistable_config(config), "runtime_settings": runtime_settings})
+    return runtime_settings
+
+
+def default_runtime_settings() -> dict[str, Any]:
+    settings = Settings()
+    return {
+        "cache": {
+            "ip_enabled": True,
+            "ip_ttl_seconds": settings.myip_cache_ttl_seconds,
+            "bgp_enabled": True,
+            "bgp_ttl_seconds": 300,
+        },
+        "rate_limit": {
+            "ip_enabled": True,
+            "ip_per_minute": settings.myip_rate_limit_per_minute,
+            "bgp_enabled": False,
+            "bgp_per_minute": settings.myip_rate_limit_per_minute,
+        },
+        "dns": {
+            "system_dns_enabled": False,
+            "doh_enabled": True,
+            "doh_providers": settings.doh_provider_names(),
+            "timeout_seconds": settings.myip_doh_timeout_seconds,
+            "ip_version_preference": "ipv4_first",
+        },
+        "bgp": {
+            "enabled": True,
+            "default_upstream_limit": 20,
+            "max_upstream_limit": 50,
+            "show_tier1": True,
+            "show_edge_state": True,
+            "cache_ttl_seconds": 300,
+        },
+    }
+
+
+def _normalize_runtime_settings(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="runtime_settings must be an object")
+    defaults = default_runtime_settings()
+    cache = {**defaults["cache"], **(payload.get("cache") or {})}
+    rate_limit = {**defaults["rate_limit"], **(payload.get("rate_limit") or {})}
+    dns = {**defaults["dns"], **(payload.get("dns") or {})}
+    bgp = {**defaults["bgp"], **(payload.get("bgp") or {})}
+    providers = _string_list(dns.get("doh_providers", []), "doh_providers")
+    unknown_providers = set(providers) - {"cloudflare", "google", "quad9"}
+    if unknown_providers:
+        raise HTTPException(status_code=422, detail=f"unknown DoH provider: {sorted(unknown_providers)}")
+    preference = dns.get("ip_version_preference", "ipv4_first")
+    if preference not in {"ipv4_first", "ipv6_first"}:
+        raise HTTPException(status_code=422, detail="ip_version_preference is invalid")
+    max_upstreams = _positive_int(bgp.get("max_upstream_limit"), "max_upstream_limit")
+    default_upstreams = _positive_int(bgp.get("default_upstream_limit"), "default_upstream_limit")
+    if default_upstreams > max_upstreams:
+        raise HTTPException(status_code=422, detail="default_upstream_limit must be <= max_upstream_limit")
+    return {
+        "cache": {
+            "ip_enabled": bool(cache.get("ip_enabled")),
+            "ip_ttl_seconds": _positive_int(cache.get("ip_ttl_seconds"), "ip_ttl_seconds"),
+            "bgp_enabled": bool(cache.get("bgp_enabled")),
+            "bgp_ttl_seconds": _positive_int(cache.get("bgp_ttl_seconds"), "bgp_ttl_seconds"),
+        },
+        "rate_limit": {
+            "ip_enabled": bool(rate_limit.get("ip_enabled")),
+            "ip_per_minute": _positive_int(rate_limit.get("ip_per_minute"), "ip_per_minute"),
+            "bgp_enabled": bool(rate_limit.get("bgp_enabled")),
+            "bgp_per_minute": _positive_int(rate_limit.get("bgp_per_minute"), "bgp_per_minute"),
+        },
+        "dns": {
+            "system_dns_enabled": bool(dns.get("system_dns_enabled")),
+            "doh_enabled": bool(dns.get("doh_enabled")),
+            "doh_providers": providers,
+            "timeout_seconds": _optional_positive_float(dns.get("timeout_seconds"), "timeout_seconds") or defaults["dns"]["timeout_seconds"],
+            "ip_version_preference": preference,
+        },
+        "bgp": {
+            "enabled": bool(bgp.get("enabled")),
+            "default_upstream_limit": default_upstreams,
+            "max_upstream_limit": max_upstreams,
+            "show_tier1": bool(bgp.get("show_tier1")),
+            "show_edge_state": bool(bgp.get("show_edge_state")),
+            "cache_ttl_seconds": _positive_int(bgp.get("cache_ttl_seconds"), "cache_ttl_seconds"),
+        },
     }
 
 
