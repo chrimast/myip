@@ -6,6 +6,7 @@ import httpx
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import get_settings
+from app.services.admin_config import read_provider_config
 
 DOH_PROVIDER_ENDPOINTS = {
     "cloudflare": "https://cloudflare-dns.com/dns-query",
@@ -86,11 +87,12 @@ def resolve_domain(hostname: str) -> TargetResolution:
     if not looks_like_domain(hostname):
         raise invalid_ip_query_error(hostname)
 
+    dns_settings = _runtime_dns_settings()
     last_error: Exception | None = None
     saw_nxdomain = False
-    for provider, endpoint in _configured_doh_providers():
+    for provider, endpoint in _configured_doh_providers(dns_settings):
         try:
-            doh_ips = _lookup_doh(hostname, endpoint)
+            doh_ips = _lookup_doh(hostname, endpoint, dns_settings)
         except ValueError as exc:
             last_error = exc
             if str(exc) == "domain name could not be resolved":
@@ -100,6 +102,7 @@ def resolve_domain(hostname: str) -> TargetResolution:
             last_error = exc
             continue
         if doh_ips:
+            doh_ips = _sort_ips_for_preference(doh_ips, dns_settings.get("ip_version_preference", "ipv4_first"))
             return TargetResolution(
                 input=hostname,
                 selected_ip=doh_ips[0],
@@ -107,7 +110,7 @@ def resolve_domain(hostname: str) -> TargetResolution:
                 dns_provider=provider,
             )
 
-    if saw_nxdomain or not _configured_doh_providers():
+    if saw_nxdomain or not _configured_doh_providers(dns_settings):
         raise invalid_ip_query_error(
             hostname,
             error_type="dns_name_not_found",
@@ -116,8 +119,16 @@ def resolve_domain(hostname: str) -> TargetResolution:
     raise DNSResolutionError(f"DNS resolvers are temporarily unavailable for {hostname}")
 
 
-def _configured_doh_providers() -> list[tuple[str, str]]:
-    provider_names = get_settings().doh_provider_names()
+def _runtime_dns_settings() -> dict:
+    config = read_provider_config()
+    return config.get("runtime_settings", {}).get("dns", {}) if config.get("exists") else {}
+
+
+def _configured_doh_providers(dns_settings: dict | None = None) -> list[tuple[str, str]]:
+    dns_settings = dns_settings or {}
+    if dns_settings.get("doh_enabled", True) is False:
+        return []
+    provider_names = dns_settings.get("doh_providers") or get_settings().doh_provider_names()
     return [
         (name, DOH_PROVIDER_ENDPOINTS[name])
         for name in provider_names
@@ -125,12 +136,13 @@ def _configured_doh_providers() -> list[tuple[str, str]]:
     ]
 
 
-def _lookup_doh(hostname: str, endpoint: str) -> list[str]:
+def _lookup_doh(hostname: str, endpoint: str, dns_settings: dict | None = None) -> list[str]:
+    timeout = (dns_settings or {}).get("timeout_seconds") or get_settings().myip_doh_timeout_seconds
     response = httpx.get(
         endpoint,
         params={"name": hostname, "type": "A"},
         headers={"accept": "application/dns-json"},
-        timeout=get_settings().myip_doh_timeout_seconds,
+        timeout=timeout,
     )
     response.raise_for_status()
     data = response.json()
@@ -140,6 +152,12 @@ def _lookup_doh(hostname: str, endpoint: str) -> list[str]:
     if status != 0:
         raise ValueError("DoH lookup failed")
     return unique_doh_ips(data.get("Answer", []))
+
+
+def _sort_ips_for_preference(ips: list[str], preference: str) -> list[str]:
+    if preference not in {"ipv4_first", "ipv6_first"}:
+        return ips
+    return sorted(ips, key=lambda value: 0 if (ip_address(value).version == (6 if preference == "ipv6_first" else 4)) else 1)
 
 
 def looks_like_domain(value: str) -> bool:

@@ -202,6 +202,44 @@ def test_target_resolution_uses_configured_doh_timeout_and_provider_order(monkey
     assert calls == [("https://dns.google/resolve", 1.5)]
 
 
+
+def test_resolve_domain_uses_admin_runtime_doh_order_timeout_and_ipv6_preference(tmp_path, monkeypatch):
+    from app.services import admin_config
+
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr(admin_config, "PROVIDER_CONFIG_PATH", config_path)
+    admin_config.save_runtime_settings(
+        {"dns": {"doh_providers": ["quad9", "cloudflare"], "timeout_seconds": 2.5, "ip_version_preference": "ipv6_first"}}
+    )
+    calls: list[tuple[str, float]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "Status": 0,
+                "Answer": [
+                    {"type": 1, "data": "93.184.216.34"},
+                    {"type": 28, "data": "2606:2800:220:1:248:1893:25c8:1946"},
+                ],
+            }
+
+    def fake_get(url: str, *, params: dict[str, str], headers: dict[str, str], timeout: float) -> FakeResponse:
+        calls.append((url, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    resolution = resolve_domain("example.com")
+
+    assert resolution.selected_ip == "2606:2800:220:1:248:1893:25c8:1946"
+    assert resolution.resolved_ips == ["2606:2800:220:1:248:1893:25c8:1946", "93.184.216.34"]
+    assert resolution.dns_provider == "quad9"
+    assert calls == [("https://dns.quad9.net/dns-query", 2.5)]
+
+
 def test_invalid_domain_input_is_422_without_dns_lookup(monkeypatch):
     def fail_getaddrinfo(host: str, port: int | None, *, type: int = 0) -> list[tuple]:
         raise AssertionError("DNS should not be called for malformed input")

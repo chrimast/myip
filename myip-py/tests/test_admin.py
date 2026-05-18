@@ -28,6 +28,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "访问限制设置" in body
     assert "DNS / DoH 设置" in body
     assert "BGP 图谱设置" in body
+    assert "IP 缓存粒度" in body
+    assert "ipv4_24" in body
     assert "data-runtime-settings" in body
     assert "data-cache-settings" in body
     assert "data-rate-limit-settings" in body
@@ -115,7 +117,7 @@ def test_admin_runtime_settings_defaults_and_persistence(tmp_path, monkeypatch):
 
     assert defaults.status_code == 200
     assert defaults.json() == {
-        "cache": {"ip_enabled": True, "ip_ttl_seconds": 120, "bgp_enabled": True, "bgp_ttl_seconds": 300},
+        "cache": {"ip_enabled": True, "ip_ttl_seconds": 120, "ip_cache_granularity": "ipv4_24", "bgp_enabled": True, "bgp_ttl_seconds": 300},
         "rate_limit": {"ip_enabled": True, "ip_per_minute": 60, "bgp_enabled": False, "bgp_per_minute": 60},
         "dns": {
             "system_dns_enabled": False,
@@ -137,7 +139,7 @@ def test_admin_runtime_settings_defaults_and_persistence(tmp_path, monkeypatch):
     saved = client.put(
         "/api/admin/runtime-settings",
         json={
-            "cache": {"ip_enabled": False, "ip_ttl_seconds": 30, "bgp_enabled": True, "bgp_ttl_seconds": 900},
+            "cache": {"ip_enabled": False, "ip_ttl_seconds": 30, "ip_cache_granularity": "single_ip", "bgp_enabled": True, "bgp_ttl_seconds": 900},
             "rate_limit": {"ip_enabled": True, "ip_per_minute": 120, "bgp_enabled": True, "bgp_per_minute": 30},
             "dns": {
                 "system_dns_enabled": True,

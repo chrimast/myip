@@ -662,6 +662,83 @@ def test_bgp_endpoint_returns_best_effort_error_without_cache(monkeypatch):
     }
 
 
+def test_bgp_endpoint_uses_runtime_settings_for_limit_cache_and_rate_limit(tmp_path, monkeypatch):
+    from app.api import bgp as bgp_module
+    from app.services import admin_config
+
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr(admin_config, "PROVIDER_CONFIG_PATH", config_path)
+    bgp_module.clear_bgp_topology_cache()
+    now = {"value": 100.0}
+    calls = []
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        calls.append((asn, limit))
+        return bgp_module.BGPTopology(
+            asn=asn,
+            name=f"GOOGLE-{len(calls)}",
+            upstreams=[
+                bgp_module.ASNNode(asn=3356, name="LEVEL3", is_tier1=True),
+                bgp_module.ASNNode(asn=6453, name="TATA"),
+                bgp_module.ASNNode(asn=1299, name="ARELION", is_tier1=True),
+            ],
+        )
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    monkeypatch.setattr(bgp_module.time, "monotonic", lambda: now["value"])
+    client = TestClient(app)
+
+    saved = client.put(
+        "/api/admin/runtime-settings",
+        json={
+            "rate_limit": {"bgp_enabled": True, "bgp_per_minute": 1},
+            "bgp": {"enabled": True, "default_upstream_limit": 2, "max_upstream_limit": 2, "cache_ttl_seconds": 10},
+            "cache": {"bgp_enabled": True, "bgp_ttl_seconds": 10},
+        },
+    )
+    assert saved.status_code == 200
+
+    first = client.get("/api/bgp?AS15169")
+    second = client.get("/api/bgp?AS15169")
+    third = client.get("/api/bgp?AS15170")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert calls == [(15169, 2)]
+    assert len(first.json()["data"]["upstreams"]) == 2
+    assert first.json() == second.json()
+
+
+def test_bgp_runtime_cache_can_be_disabled(tmp_path, monkeypatch):
+    from app.api import bgp as bgp_module
+    from app.services import admin_config
+
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr(admin_config, "PROVIDER_CONFIG_PATH", config_path)
+    bgp_module.clear_bgp_topology_cache()
+    calls = []
+
+    def fake_fetch_topology(asn: int, limit: int) -> bgp_module.BGPTopology:
+        calls.append((asn, limit))
+        return bgp_module.BGPTopology(asn=asn, name=f"GOOGLE-{len(calls)}")
+
+    monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
+    client = TestClient(app)
+    saved = client.put(
+        "/api/admin/runtime-settings",
+        json={"cache": {"bgp_enabled": False}, "bgp": {"default_upstream_limit": 1, "max_upstream_limit": 5}},
+    )
+    assert saved.status_code == 200
+
+    first = client.get("/api/bgp?AS15169")
+    second = client.get("/api/bgp?AS15169")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == [(15169, 1), (15169, 1)]
+
+
 def test_bgp_endpoint_rejects_invalid_asn_without_fetch(monkeypatch):
     from app.api import bgp as bgp_module
 

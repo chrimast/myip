@@ -614,6 +614,7 @@ def default_runtime_settings() -> dict[str, Any]:
         "cache": {
             "ip_enabled": True,
             "ip_ttl_seconds": settings.myip_cache_ttl_seconds,
+            "ip_cache_granularity": "ipv4_24",
             "bgp_enabled": True,
             "bgp_ttl_seconds": 300,
         },
@@ -654,6 +655,9 @@ def _normalize_runtime_settings(payload: Any) -> dict[str, Any]:
     if unknown_providers:
         raise HTTPException(status_code=422, detail=f"unknown DoH provider: {sorted(unknown_providers)}")
     preference = dns.get("ip_version_preference", "ipv4_first")
+    granularity = cache.get("ip_cache_granularity", "ipv4_24")
+    if granularity not in {"single_ip", "ipv4_24"}:
+        raise HTTPException(status_code=422, detail="ip_cache_granularity is invalid")
     if preference not in {"ipv4_first", "ipv6_first"}:
         raise HTTPException(status_code=422, detail="ip_version_preference is invalid")
     max_upstreams = _positive_int(bgp.get("max_upstream_limit"), "max_upstream_limit")
@@ -664,6 +668,7 @@ def _normalize_runtime_settings(payload: Any) -> dict[str, Any]:
         "cache": {
             "ip_enabled": bool(cache.get("ip_enabled")),
             "ip_ttl_seconds": _positive_int(cache.get("ip_ttl_seconds"), "ip_ttl_seconds"),
+            "ip_cache_granularity": granularity,
             "bgp_enabled": bool(cache.get("bgp_enabled")),
             "bgp_ttl_seconds": _positive_int(cache.get("bgp_ttl_seconds"), "bgp_ttl_seconds"),
         },

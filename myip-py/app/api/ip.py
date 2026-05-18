@@ -1,5 +1,5 @@
 import time
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 
 import httpx
 
@@ -36,10 +36,31 @@ def clear_ip_lookup_cache() -> None:
     _ip_rate_limiter.clear()
 
 
-def _enforce_rate_limit(client_host: str) -> None:
-    _ip_rate_limiter.limit = IP_LOOKUP_RATE_LIMIT_PER_MINUTE
+def _enforce_rate_limit(client_host: str, runtime_settings: dict | None = None) -> None:
+    rate_limit = (runtime_settings or {}).get("rate_limit", {})
+    if rate_limit.get("ip_enabled", True) is False:
+        return
+    _ip_rate_limiter.limit = int(rate_limit.get("ip_per_minute") or IP_LOOKUP_RATE_LIMIT_PER_MINUTE)
     if not _ip_rate_limiter.allow(client_host):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+
+def _ip_cache_key(ip: str, runtime_settings: dict | None = None) -> str:
+    cache = (runtime_settings or {}).get("cache", {})
+    if cache.get("ip_cache_granularity", "ipv4_24") != "ipv4_24":
+        return ip
+    parsed = ip_address(ip)
+    if parsed.version != 4:
+        return ip
+    return str(ip_network(f"{ip}/24", strict=False))
+
+
+def _copy_cached_info_for_target(info: IPInfo, target_ip: str) -> IPInfo:
+    if info.ip == target_ip:
+        return info
+    copied = info.model_copy(deep=True)
+    copied.ip = target_ip
+    return copied
 
 
 def _client_ip_from_request(request: Request) -> str:
@@ -176,9 +197,15 @@ def lookup_ip(
     except DNSResolutionError as exc:
         raise HTTPException(status_code=502, detail="DNS resolvers are temporarily unavailable") from exc
     target_ip = resolution.selected_ip
-    _enforce_rate_limit(request.client.host)
-    _ip_lookup_cache.ttl_seconds = IP_LOOKUP_CACHE_TTL_SECONDS
-    if cached := _ip_lookup_cache.get(target_ip):
+    config = read_provider_config()
+    runtime_settings = config.get("runtime_settings", {}) if config.get("exists") else {}
+    _enforce_rate_limit(request.client.host, runtime_settings)
+    cache_settings = runtime_settings.get("cache", {})
+    cache_enabled = cache_settings.get("ip_enabled", True)
+    cache_key = _ip_cache_key(target_ip, runtime_settings)
+    _ip_lookup_cache.ttl_seconds = int(cache_settings.get("ip_ttl_seconds") or IP_LOOKUP_CACHE_TTL_SECONDS)
+    if cache_enabled and (cached := _ip_lookup_cache.get(cache_key)):
+        cached = _copy_cached_info_for_target(cached, target_ip)
         return json_response_with_etag(
             request,
             _with_resolution_metadata(
@@ -192,7 +219,8 @@ def lookup_ip(
 
     if local_result := local_ip_info(target_ip):
         local_result = enrich_ip_intelligence(local_result)
-        _ip_lookup_cache.set(target_ip, local_result)
+        if cache_enabled:
+            _ip_lookup_cache.set(cache_key, local_result)
         return json_response_with_etag(
             request,
             _with_resolution_metadata(
@@ -215,7 +243,8 @@ def lookup_ip(
     result = _apply_registry_lookup(result, target_ip)
     result, _disabled_fields = apply_field_overrides(result)
     result = enrich_ip_intelligence(result)
-    _ip_lookup_cache.set(target_ip, result)
+    if cache_enabled:
+        _ip_lookup_cache.set(cache_key, result)
     return json_response_with_etag(
         request,
         _with_resolution_metadata(
