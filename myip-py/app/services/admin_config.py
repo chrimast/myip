@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.core.config import Settings
+from app.services.ip_lookup import FIELD_PRIORITY_GROUPS, PROVIDER_FIELD_PRIORITIES
 
 PROVIDER_CONFIG_PATH = Path("data/admin_provider_config.json")
 CONFIG_VERSION = 1
@@ -361,7 +362,14 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
         "source_type": "identity_text",
         "scoring": False,
         "used_for": ["display", "compatibility"],
-        "providers": {},
+        "providers": {
+            "ipapi.is": ["company.name"],
+            "ipwho.is": ["connection.org"],
+            "ip-api.com": ["org"],
+            "ipapi.org": ["org", "asn.name"],
+            "ipinfo.io": ["org", "hostname"],
+            "ipdata.co": ["organisation", "isp", "asn.name"],
+        },
     },
     {
         "field": "asn_owner",
@@ -369,7 +377,14 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
         "source_type": "identity_text",
         "scoring": False,
         "used_for": ["display", "compatibility"],
-        "providers": {},
+        "providers": {
+            "ipapi.is": ["asn.org"],
+            "ipwho.is": ["connection.isp"],
+            "ip-api.com": ["as"],
+            "ipapi.org": ["asname", "asn.name"],
+            "ipinfo.io": ["asn.name", "asn_name", "as_name"],
+            "ipdata.co": ["asn.name"],
+        },
     },
     {
         "field": "asn_domain",
@@ -377,7 +392,12 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
         "source_type": "identity_text",
         "scoring": False,
         "used_for": ["display", "link"],
-        "providers": {},
+        "providers": {
+            "ipapi.is": ["asn.domain"],
+            "ipwho.is": ["connection.domain"],
+            "ipinfo.io": ["asn.domain", "asn_domain"],
+            "ipdata.co": ["asn.domain"],
+        },
     },
     {
         "field": "org_domain",
@@ -385,7 +405,10 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
         "source_type": "identity_text",
         "scoring": False,
         "used_for": ["display", "link"],
-        "providers": {},
+        "providers": {
+            "ipapi.is": ["company.domain"],
+            "ipwho.is": ["connection.domain"],
+        },
     },
 ]
 
@@ -415,7 +438,50 @@ def admin_providers(settings: Settings) -> list[dict[str, Any]]:
 
 
 def admin_fields() -> list[dict[str, Any]]:
-    return [*FIELD_DEFINITIONS, *read_provider_config()["custom_fields"]]
+    return [_field_view(field) for field in [*FIELD_DEFINITIONS, *read_provider_config()["custom_fields"]]]
+
+
+def _field_view(field: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(field)
+    providers = dict(enriched.get("providers") or {})
+    priority = _provider_priority(enriched["field"], providers)
+    enriched["display_name"] = enriched["field"]
+    enriched["provider_priority"] = priority
+    enriched["provider_mappings"] = [
+        {"provider": provider, "paths": providers.get(provider, []), "priority": index}
+        for index, provider in enumerate(priority, start=1)
+    ]
+    enriched["scoring_details"] = _scoring_details(enriched)
+    return enriched
+
+
+def _provider_priority(field_name: str, providers: dict[str, list[str]]) -> list[str]:
+    group = FIELD_PRIORITY_GROUPS.get(field_name)
+    configured_order = list(providers)
+    if not group:
+        return configured_order
+    preferred = [provider for provider in PROVIDER_FIELD_PRIORITIES[group] if provider in providers]
+    return [*preferred, *[provider for provider in configured_order if provider not in preferred]]
+
+
+def _scoring_details(field: dict[str, Any]) -> dict[str, Any]:
+    details = {
+        "participates": bool(field.get("scoring")),
+        "signals": list(field.get("used_for") or []),
+        "rule": "仅用于展示/兼容，不直接参与评分",
+    }
+    field_name = field.get("field")
+    if field_name == "network_type":
+        details["rule"] = "识别 hosting/residential/business 网络类型，影响 IP 属性、风险置信度和人机置信度"
+    elif field_name == "is_hosting":
+        details["rule"] = "托管/机房信号会提高机房 IP、风险和机器人倾向"
+    elif field_name in {"is_proxy", "is_vpn", "is_tor", "is_crawler", "is_abuser"}:
+        details["rule"] = "风险布尔信号会提高风险分和机器人倾向"
+    elif field_name == "is_mobile":
+        details["rule"] = "移动网络信号通常降低风险并偏向家庭 IP，强风险存在时折扣变小"
+    elif field_name == "ip_source":
+        details["rule"] = "比较注册归属地 reg_region 与实际出口 country_code/country"
+    return details
 
 
 def default_provider_config() -> dict[str, Any]:

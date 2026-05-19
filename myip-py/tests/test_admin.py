@@ -48,7 +48,16 @@ def test_admin_page_serves_provider_management_shell():
     assert "步骤 4：测试验证" in body
     assert "步骤 5：启用" in body
     assert "字段管理" in body
-    assert "字段管理" in body
+    assert "6. 字段说明" in body
+    assert "固定字段名称" in body
+    assert "Provider 字段引用" in body
+    assert "字段优先级" in body
+    assert "评分参与说明" in body
+    assert "data-field-catalog" in body
+    assert "data-field-card" in body
+    assert "data-field-mapping" in body
+    assert "data-scoring-field" in body
+    assert "参与评分" in body
     assert "/api/admin/settings" in body
     assert "/api/admin/providers" in body
     assert "/api/admin/fields" in body
@@ -243,6 +252,12 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["network_type"]["scoring"] is True
     assert fields["network_type"]["source_type"] == "provider_structured"
     assert fields["network_type"]["providers"]["ipapi.is"] == ["company.type", "asn.type"]
+    assert fields["network_type"]["provider_mappings"][0] == {"provider": "ipapi.is", "paths": ["company.type", "asn.type"], "priority": 1}
+    assert fields["network_type"]["provider_mappings"][1]["provider"] == "ipwho.is"
+    assert fields["network_type"]["provider_priority"][:2] == ["ipapi.is", "ipwho.is"]
+    assert fields["network_type"]["scoring_details"]["participates"] is True
+    assert fields["network_type"]["scoring_details"]["signals"] == ["ip_property", "risk_confidence", "humanbot_confidence"]
+    assert fields["network_type"]["display_name"] == "network_type"
     assert fields["network_type"]["providers"]["ipwho.is"] == [
         "connection.type",
         "connection.connection_type",
@@ -250,6 +265,12 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["isp"]["scoring"] is False
     assert fields["isp"]["source_type"] == "identity_text"
     assert fields["isp"]["used_for"] == ["display", "compatibility"]
+    assert fields["isp"]["scoring_details"]["participates"] is False
+    assert fields["isp"]["provider_priority"] == ["ipapi.is", "ipwho.is", "ipinfo.io", "ipdata.co", "ip-api.com", "ipapi.org"]
+    assert fields["asn_owner"]["providers"]["ipapi.is"] == ["asn.org"]
+    assert fields["asn_owner"]["provider_priority"][:3] == ["ipapi.is", "ipinfo.io", "ipdata.co"]
+    assert fields["org"]["providers"]["ipapi.is"] == ["company.name"]
+    assert fields["ip_source"]["scoring_details"]["rule"] == "比较注册归属地 reg_region 与实际出口 country_code/country"
     assert fields["is_hosting"]["scoring"] is True
 
 

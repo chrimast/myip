@@ -57,6 +57,7 @@
       <a href="#provider-management">3. Provider 管理</a>
       <a href="#custom-extensions">4. 自定义扩展</a>
       <a href="#runtime-settings">5. 运行设置</a>
+      <a href="#field-catalog">6. 字段说明</a>
       <a href="#lookup-debug">高级调试</a>
     </nav>
   </header>
@@ -153,6 +154,17 @@
       <div class="action-row"><button id="save-runtime-settings" type="button">保存运行设置</button></div>
     </section>
 
+    <section id="field-catalog" data-field-catalog>
+      <h2>6. 字段说明</h2>
+      <p class="small">前端使用固定字段名称；每个字段下面列出引用哪些 Provider 的哪个原始字段，并按实际合并优先级展示。参与评分的字段会显示评分参与说明，方便你判断哪些字段可以改、怎么改。</p>
+      <div class="grid">
+        <div class="card"><h3>固定字段名称</h3><p>字段名保持 snake_case，例如 <code>asn_owner</code>、<code>org</code>、<code>network_type</code>。前端展示和 API 兼容都基于这些固定名称。</p></div>
+        <div class="card"><h3>Provider 字段引用</h3><p>每个字段卡片会展示 provider → 原始路径，例如 <code>ipapi.is: asn.org</code>。顺序代表优先级。</p></div>
+        <div class="card"><h3>评分参与说明</h3><p>标记为“参与评分”的字段会影响 IP 属性、风险分、人机比例或置信度；展示字段不会直接参与评分。</p></div>
+      </div>
+      <div id="field-cards" class="grid" style="margin-top:16px"></div>
+    </section>
+
     <section id="lookup-debug">
       <h2>高级调试</h2>
       <div class="card">
@@ -195,7 +207,8 @@
     async function loadProviderConfig() { renderProviderConfig(await loadJson(endpoints.providerConfig)); }
     async function reloadCatalogs() { const [providers, fields] = await Promise.all([loadJson(endpoints.providers), loadJson(endpoints.fields)]); window.adminFields = fields; renderProviders(providers); renderFields(fields); }
     function renderProviders(providers) { document.getElementById('providers').innerHTML = providers.map(provider => `<div class="card" data-provider-card="${esc(provider.id)}"><h3>${esc(provider.order)}. ${esc(provider.id)}${provider.custom ? ' · 自定义' : ''}</h3><p><span class="pill">${provider.enabled ? '启用' : '停用'}</span><span class="pill">${esc(provider.role)}</span><span class="pill">${esc(provider.fallback_phase)}</span></p><p class="muted">${esc(provider.endpoint)}</p><p>Key: <code>${esc(provider.key_name || 'none')}</code> · <span class="${provider.key_configured ? 'ok' : 'warn'}">${provider.key_configured ? '已配置' : '未配置/无需'}</span></p><p class="small">字段：${pills(provider.provides)}</p></div>`).join(''); }
-    function renderFields(fields) { document.getElementById('fields').innerHTML = fields.map(field => `<tr><td><strong>${esc(field.field)}</strong>${field.custom ? ' <span class="pill">自定义</span>' : ''}<br><span class="muted">${esc(field.label)}</span></td><td>${esc(field.source_type)}</td><td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td><td>${pills(field.used_for)}</td><td>${providerMap(field.providers)}</td></tr>`).join(''); }
+    function renderFields(fields) { document.getElementById('fields').innerHTML = fields.map(field => `<tr><td><strong>${esc(field.field)}</strong>${field.custom ? ' <span class="pill">自定义</span>' : ''}<br><span class="muted">${esc(field.label)}</span></td><td>${esc(field.source_type)}</td><td>${field.scoring ? '<span class="ok">是</span>' : '<span class="warn">否</span>'}</td><td>${pills(field.used_for)}</td><td>${providerMap(field.providers)}</td></tr>`).join(''); renderFieldCards(fields); }
+    function renderFieldCards(fields) { const node = document.getElementById('field-cards'); if (!node) return; node.innerHTML = fields.map(field => `<div class="card" data-field-card="${esc(field.field)}" ${field.scoring ? `data-scoring-field="${esc(field.field)}"` : ''}><h3>${esc(field.display_name || field.field)} <span class="pill">${esc(field.label)}</span></h3><p><span class="pill">${esc(field.type || 'builtin')}</span><span class="pill">${esc(field.source_type)}</span>${field.scoring ? '<span class="pill ok">参与评分</span>' : '<span class="pill">展示/兼容</span>'}</p><p><strong>字段优先级</strong>: ${pills(field.provider_priority || Object.keys(field.providers || {}))}</p><div data-field-mapping="${esc(field.field)}">${(field.provider_mappings || []).map(mapping => `<p><strong>#${esc(mapping.priority)} ${esc(mapping.provider)}</strong>: ${pills(mapping.paths)}</p>`).join('') || '<p class="muted">暂无 Provider 字段引用</p>'}</div><p><strong>评分参与说明</strong>: ${esc((field.scoring_details || {}).rule || '无')}</p><p class="small">用途：${pills((field.scoring_details || {}).signals || field.used_for || [])}</p></div>`).join(''); }
     async function runLookup(target) { renderLookup(await loadJson(`${endpoints.lookup}?target=${encodeURIComponent(target)}`)); }
     function setRuntimeValue(path, value) { const el = document.querySelector(`[data-runtime="${path}"]`); if (!el) return; if (el.type === 'checkbox') el.checked = Boolean(value); else el.value = Array.isArray(value) ? value.join(',') : value; }
     function getRuntimeValue(path) { const el = document.querySelector(`[data-runtime="${path}"]`); if (!el) return null; if (el.type === 'checkbox') return el.checked; if (path.endsWith('doh_providers')) return el.value.split(',').map(item => item.trim()).filter(Boolean); if (el.type === 'number') return Number(el.value); return el.value.trim(); }
