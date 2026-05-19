@@ -33,6 +33,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "Provider 总览" in body
     assert "Provider 视图与原 Provider 概览已合并" in body
     assert "Provider 配置已合并到 Provider 总览" in body
+    assert body.index('data-provider-view') > body.index('id="provider-management"')
+    assert body.index('Provider 总览') < body.index('保存与公开控制')
     assert "新增数据源" in body
     assert "按字段查看评分字段" not in body
     assert "添加自定义 Provider、测试返回 JSON" not in body

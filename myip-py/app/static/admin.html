@@ -110,11 +110,6 @@
         <div class="action-row"><button id="save-field-mappings" type="button" data-save-field-mappings>保存字段映射</button></div>
         <div id="field-cards" style="margin-top:16px"></div>
       </div>
-      <div data-provider-view>
-        <h3>Provider 总览</h3>
-        <p class="small">Provider 视图与原 Provider 概览已合并；Provider 配置已合并到 Provider 总览：同一张卡片里编辑启用状态、顺序和超时，并查看角色、Key 状态、Provider 覆盖摘要和原始字段路径。</p>
-        <div id="mapping-provider-view" class="grid" data-provider-coverage-summary></div>
-      </div>
       <div data-new-data-source>
         <h3>新增数据源</h3>
       <div class="two-col">
@@ -151,6 +146,11 @@
     <section id="provider-management">
       <h2>3. Provider 管理</h2>
       <div>
+      <div data-provider-view>
+        <h3>Provider 总览</h3>
+        <p class="small">Provider 视图与原 Provider 概览已合并；Provider 配置已合并到 Provider 总览：同一张卡片里编辑启用状态、顺序和超时，并查看角色、Key 状态、Provider 覆盖摘要和原始字段路径。</p>
+        <div id="mapping-provider-view" class="grid" data-provider-coverage-summary></div>
+      </div>
         <div class="card" data-provider-config-panel>
           <h3>保存与公开控制</h3>
           <p>Provider 总览中的启用状态、顺序、超时覆盖会随这里的字段启用状态和运行设置一起保存。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。</p>
