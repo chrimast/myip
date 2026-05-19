@@ -162,6 +162,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-provider-config-id" in body
     assert "provider-config-control-label" in body
     assert "provider-config-control-input" in body
+    assert ">配置</strong>" not in body
+    assert "provider-config-inline-controls" in body
     assert "grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr)" in body
     assert "minmax(0,1fr)" in body
     assert "collectProviderConfig().runtime_settings" in body
