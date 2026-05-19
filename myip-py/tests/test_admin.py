@@ -151,6 +151,27 @@ def test_admin_page_serves_provider_management_shell():
     assert "minmax(0,1fr)" in body
     assert "collectProviderConfig().runtime_settings" in body
     assert body.index('id="mapping-workspace"') < body.index('id="provider-management"')
+    assert "数据接口导航" in body
+    assert "data-api-nav" in body
+    assert "data-api-page=\"settings\"" in body
+    assert "data-api-page=\"providers\"" in body
+    assert "data-api-page=\"fields\"" in body
+    assert "data-api-page=\"lookup\"" in body
+    assert "data-api-page=\"config-status\"" in body
+    assert "接口页面：/api/admin/settings" in body
+    assert "接口页面：/api/admin/providers" in body
+    assert "接口页面：/api/admin/fields" in body
+    assert "接口页面：/api/admin/lookup" in body
+    assert "接口页面：/api/admin/config-status" in body
+    assert "data-api-response" in body
+    assert "认证方式" in body
+    assert "无需认证" in body
+    assert "API Key" in body
+    assert "Bearer Token" in body
+    assert "data-custom-provider-auth-type" in body
+    assert "data-custom-provider-auth-name" in body
+    assert "data-custom-provider-auth-value" in body
+    assert "Key / Token 只保存在后台配置" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
