@@ -15,6 +15,7 @@ from app.services.admin_config import (
     read_provider_config,
     record_custom_provider_preview,
     reset_provider_config,
+    save_field_mappings,
     save_runtime_settings,
     write_provider_config,
 )
@@ -64,6 +65,11 @@ def runtime_settings() -> dict:
 @router.put("/runtime-settings")
 def update_runtime_settings(payload: dict) -> dict:
     return save_runtime_settings(payload)
+
+
+@router.put("/field-mappings")
+def update_field_mappings(payload: dict) -> dict:
+    return save_field_mappings(payload)
 
 
 @router.put("/provider-config")

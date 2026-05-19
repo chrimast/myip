@@ -58,6 +58,15 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-mapping" in body
     assert "data-scoring-field" in body
     assert "参与评分" in body
+    assert "评分字段" in body
+    assert "非评分字段" in body
+    assert "data-scoring-fields" in body
+    assert "data-display-fields" in body
+    assert "编辑字段映射" in body
+    assert "保存字段映射" in body
+    assert "data-field-mapping-editor" in body
+    assert "data-save-field-mappings" in body
+    assert "/api/admin/field-mappings" in body
     assert "/api/admin/settings" in body
     assert "/api/admin/providers" in body
     assert "/api/admin/fields" in body
@@ -258,6 +267,7 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["network_type"]["scoring_details"]["participates"] is True
     assert fields["network_type"]["scoring_details"]["signals"] == ["ip_property", "risk_confidence", "humanbot_confidence"]
     assert fields["network_type"]["display_name"] == "network_type"
+    assert fields["network_type"]["mapping_source"] == "default"
     assert fields["network_type"]["providers"]["ipwho.is"] == [
         "connection.type",
         "connection.connection_type",
@@ -272,6 +282,61 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["org"]["providers"]["ipapi.is"] == ["company.name"]
     assert fields["ip_source"]["scoring_details"]["rule"] == "比较注册归属地 reg_region 与实际出口 country_code/country"
     assert fields["is_hosting"]["scoring"] is True
+
+
+def test_admin_field_mappings_api_persists_provider_paths_and_priority(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    saved = client.put(
+        "/api/admin/field-mappings",
+        json={
+            "network_type": {
+                "providers": {
+                    "ipwho.is": ["connection.connection_type"],
+                    "ipapi.is": ["asn.type"],
+                },
+                "provider_priority": ["ipwho.is", "ipapi.is"],
+            },
+            "asn_owner": {
+                "providers": {"ipinfo.io": ["asn.name"], "ipapi.is": ["asn.org"]},
+                "provider_priority": ["ipinfo.io", "ipapi.is"],
+            },
+        },
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["network_type"]["provider_priority"] == ["ipwho.is", "ipapi.is"]
+    fields = {field["field"]: field for field in client.get("/api/admin/fields").json()}
+    assert fields["network_type"]["providers"] == {
+        "ipwho.is": ["connection.connection_type"],
+        "ipapi.is": ["asn.type"],
+    }
+    assert fields["network_type"]["provider_mappings"] == [
+        {"provider": "ipwho.is", "paths": ["connection.connection_type"], "priority": 1},
+        {"provider": "ipapi.is", "paths": ["asn.type"], "priority": 2},
+    ]
+    assert fields["network_type"]["mapping_source"] == "admin"
+    assert client.get("/api/admin/provider-config").json()["field_mappings"]["asn_owner"]["provider_priority"] == ["ipinfo.io", "ipapi.is"]
+
+
+def test_admin_field_mappings_api_rejects_unknown_fields_and_providers(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/admin/field-mappings",
+        json={"unknown_field": {"providers": {"ipapi.is": ["asn.type"]}}},
+    )
+    assert response.status_code == 422
+
+    response = client.put(
+        "/api/admin/field-mappings",
+        json={"network_type": {"providers": {"unknown-provider": ["asn.type"]}}},
+    )
+    assert response.status_code == 422
 
 
 def test_admin_lookup_api_returns_enriched_result_and_field_sources():

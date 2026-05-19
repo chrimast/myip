@@ -438,13 +438,17 @@ def admin_providers(settings: Settings) -> list[dict[str, Any]]:
 
 
 def admin_fields() -> list[dict[str, Any]]:
-    return [_field_view(field) for field in [*FIELD_DEFINITIONS, *read_provider_config()["custom_fields"]]]
+    saved_config = read_provider_config()
+    mapping_overrides = saved_config.get("field_mappings", {})
+    return [_field_view(field, mapping_overrides.get(field["field"])) for field in [*FIELD_DEFINITIONS, *saved_config["custom_fields"]]]
 
 
-def _field_view(field: dict[str, Any]) -> dict[str, Any]:
+def _field_view(field: dict[str, Any], mapping_override: dict[str, Any] | None = None) -> dict[str, Any]:
     enriched = dict(field)
-    providers = dict(enriched.get("providers") or {})
-    priority = _provider_priority(enriched["field"], providers)
+    providers = dict((mapping_override or {}).get("providers") or enriched.get("providers") or {})
+    priority = _provider_priority(enriched["field"], providers, (mapping_override or {}).get("provider_priority"))
+    enriched["providers"] = providers
+    enriched["mapping_source"] = "admin" if mapping_override else "default"
     enriched["display_name"] = enriched["field"]
     enriched["provider_priority"] = priority
     enriched["provider_mappings"] = [
@@ -455,9 +459,12 @@ def _field_view(field: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
-def _provider_priority(field_name: str, providers: dict[str, list[str]]) -> list[str]:
-    group = FIELD_PRIORITY_GROUPS.get(field_name)
+def _provider_priority(field_name: str, providers: dict[str, list[str]], configured_priority: Any = None) -> list[str]:
     configured_order = list(providers)
+    if isinstance(configured_priority, list):
+        preferred = [provider for provider in configured_priority if provider in providers]
+        return [*preferred, *[provider for provider in configured_order if provider not in preferred]]
+    group = FIELD_PRIORITY_GROUPS.get(field_name)
     if not group:
         return configured_order
     preferred = [provider for provider in PROVIDER_FIELD_PRIORITIES[group] if provider in providers]
@@ -497,6 +504,7 @@ def default_provider_config() -> dict[str, Any]:
             for index, provider in enumerate(PROVIDER_DEFINITIONS, start=1)
         ],
         "field_overrides": {},
+        "field_mappings": {},
         "custom_providers": [],
         "custom_fields": [],
         "runtime_settings": default_runtime_settings(),
@@ -583,6 +591,8 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         if "enabled" in override:
             normalized_fields[field] = {"enabled": bool(override["enabled"])}
 
+    field_mappings = _normalize_field_mappings(payload.get("field_mappings", {}), known_fields, known_provider_ids)
+
     if payload.get("require_custom_provider_preview_ok") and not payload.get("public_custom_providers_enabled"):
         raise HTTPException(
             status_code=422,
@@ -593,6 +603,7 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "version": CONFIG_VERSION,
         "providers": sorted(merged_providers.values(), key=lambda item: (item["order"], item["id"])),
         "field_overrides": normalized_fields,
+        "field_mappings": field_mappings,
         "custom_providers": custom_providers,
         "custom_fields": custom_fields,
         "runtime_settings": _normalize_runtime_settings(payload.get("runtime_settings", default_runtime_settings())),
@@ -628,7 +639,17 @@ def delete_custom_field(field: str) -> dict[str, Any]:
     config = read_provider_config()
     fields = [item for item in config["custom_fields"] if item["field"] != field]
     config["field_overrides"].pop(field, None)
+    config.get("field_mappings", {}).pop(field, None)
     return write_provider_config({**_persistable_config(config), "custom_fields": fields})
+
+
+def save_field_mappings(payload: dict[str, Any]) -> dict[str, Any]:
+    config = read_provider_config()
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in config["custom_fields"]}
+    known_providers = {provider["id"] for provider in PROVIDER_DEFINITIONS} | {provider["id"] for provider in config["custom_providers"]}
+    mappings = _normalize_field_mappings(payload, known_fields, known_providers)
+    write_provider_config({**_persistable_config(config), "field_mappings": mappings})
+    return mappings
 
 
 def record_custom_provider_preview(provider_id: str, preview: dict[str, Any]) -> dict[str, Any]:
@@ -659,6 +680,7 @@ def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "providers": config["providers"],
         "field_overrides": config["field_overrides"],
+        "field_mappings": config.get("field_mappings", {}),
         "custom_providers": config["custom_providers"],
         "custom_fields": config["custom_fields"],
         "runtime_settings": config.get("runtime_settings", default_runtime_settings()),
@@ -796,6 +818,32 @@ def _normalize_custom_provider(payload: Any) -> dict[str, Any]:
         "last_preview": _last_preview(payload.get("last_preview")),
         "custom": True,
     }
+
+
+def _normalize_field_mappings(value: Any, known_fields: set[str], known_providers: set[str]) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="field_mappings must be an object")
+    normalized: dict[str, dict[str, Any]] = {}
+    for field, mapping in value.items():
+        if field not in known_fields:
+            raise HTTPException(status_code=422, detail=f"unknown field: {field}")
+        if not isinstance(mapping, dict):
+            raise HTTPException(status_code=422, detail="field mapping must be an object")
+        providers = _providers_map(mapping.get("providers", {}))
+        unknown_providers = set(providers) - known_providers
+        if unknown_providers:
+            raise HTTPException(status_code=422, detail=f"unknown provider in field mapping: {sorted(unknown_providers)}")
+        provider_priority = mapping.get("provider_priority", list(providers))
+        priority = _string_list(provider_priority, "provider_priority")
+        unknown_priority = set(priority) - set(providers)
+        if unknown_priority:
+            raise HTTPException(status_code=422, detail=f"provider_priority contains providers without paths: {sorted(unknown_priority)}")
+        if providers:
+            normalized[str(field)] = {
+                "providers": providers,
+                "provider_priority": [*priority, *[provider for provider in providers if provider not in priority]],
+            }
+    return normalized
 
 
 def _normalize_custom_fields(value: Any) -> list[dict[str, Any]]:
