@@ -61,6 +61,15 @@ def test_admin_page_serves_provider_management_shell():
     assert "步骤 3：字段映射" in body
     assert "步骤 4：测试验证" in body
     assert "步骤 5：启用" in body
+    assert "字段筛选" in body
+    assert "data-field-filter" in body
+    assert "data-field-summary-row" in body
+    assert "data-field-detail" in body
+    assert "Provider 覆盖摘要" in body
+    assert "data-provider-coverage-summary" in body
+    assert "data-provider-field-details" in body
+    assert "映射问题提示" in body
+    assert "data-mapping-issues" in body
     assert "字段管理" in body
     assert "字段视图" in body
     assert "固定字段名称" not in body
