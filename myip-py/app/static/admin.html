@@ -129,18 +129,8 @@
     <section id="mapping-workspace" data-mapping-workspace>
       <h2>4. 字段与数据源映射</h2>
       <p class="small">统一管理固定字段从哪些 Provider 的哪些原始字段取值；新增自定义 Provider 后，也在这里把测试结果映射到固定字段。</p>
-      <div class="grid">
-        <div class="card"><h3>字段视图</h3><p>按字段查看评分字段、非评分字段、自定义字段和来源优先级。</p></div>
-        <div class="card"><h3>Provider 视图</h3><p>按 Provider 查看它参与了哪些字段，以及最后验证状态。</p></div>
-        <div class="card"><h3>新增数据源</h3><p>添加自定义 Provider、测试返回 JSON，并把成功提取的字段合并到字段映射。</p></div>
-      </div>
       <div data-field-view data-field-catalog>
         <h3>字段视图</h3>
-        <div class="grid">
-          <div class="card"><h3>固定字段名称</h3><p>字段名保持 snake_case，例如 <code>asn_owner</code>、<code>org</code>、<code>network_type</code>。前端展示和 API 兼容都基于这些固定名称。</p></div>
-          <div class="card"><h3>Provider 字段引用</h3><p>每个字段卡片会展示 provider → 原始路径，例如 <code>ipapi.is: asn.org</code>。顺序代表优先级。</p></div>
-          <div class="card"><h3>评分参与说明</h3><p>标记为“参与评分”的字段会影响 IP 属性、风险分、人机比例或置信度；展示字段不会直接参与评分。</p></div>
-        </div>
         <div class="action-row"><button id="save-field-mappings" type="button" data-save-field-mappings>保存字段映射</button></div>
         <div id="field-cards" style="margin-top:16px"></div>
       </div>

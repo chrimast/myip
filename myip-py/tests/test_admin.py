@@ -25,6 +25,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "字段视图" in body
     assert "Provider 视图" in body
     assert "新增数据源" in body
+    assert "按字段查看评分字段" not in body
+    assert "添加自定义 Provider、测试返回 JSON" not in body
     assert "data-mapping-workspace" in body
     assert "data-field-view" in body
     assert "data-provider-view" in body
@@ -61,10 +63,10 @@ def test_admin_page_serves_provider_management_shell():
     assert "步骤 5：启用" in body
     assert "字段管理" in body
     assert "字段视图" in body
-    assert "固定字段名称" in body
-    assert "Provider 字段引用" in body
+    assert "固定字段名称" not in body
     assert "字段优先级" in body
-    assert "评分参与说明" in body
+    assert "字段名保持 snake_case" not in body
+    assert "每个字段卡片会展示 provider" not in body
     assert "data-field-catalog" in body
     assert "data-field-card" in body
     assert "data-field-mapping" in body
