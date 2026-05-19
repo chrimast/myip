@@ -32,6 +32,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "字段视图" in body
     assert "Provider 总览" in body
     assert "Provider 视图与原 Provider 概览已合并" in body
+    assert "Provider 配置已合并到 Provider 总览" in body
     assert "新增数据源" in body
     assert "按字段查看评分字段" not in body
     assert "添加自定义 Provider、测试返回 JSON" not in body
@@ -106,8 +107,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/fields" in body
     assert "查询调试" in body
     assert "/api/admin/lookup" in body
-    assert "Provider 配置" in body
+    assert "<h3>Provider 配置</h3>" not in body
     assert "/api/admin/provider-config" in body
+    assert "id=\"provider-config\"" not in body
     assert "<h3 style=\"margin-top:18px\">字段开关</h3>" not in body
     assert "data-field-enabled" in body
     assert "Provider 调用链" in body
@@ -148,7 +150,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "@media (max-width:720px)" in body
     assert "data-mobile-provider-config-list" in body
     assert "data-provider-config-panel" in body
-    assert "运行设置已合并到 Provider 配置" in body
+    assert "运行设置会随保存配置写入同一份 JSON" in body
     assert "data-runtime-settings-panel" in body
     assert "provider-config-mobile-row" in body
     assert "provider-config-mobile-controls" in body
