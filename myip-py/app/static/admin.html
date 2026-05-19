@@ -59,13 +59,13 @@
 <body data-light-admin-theme data-mobile-layout>
   <header>
     <h1>Provider 管理控制台</h1>
-    <p>面向日常管理重新整理：先看总览和公开接口状态，再管理 Provider、字段与数据源映射；后台 debug 默认收起。</p>
+    <p>面向日常管理重新整理：先看总览和公开接口状态，再按新增数据源、测试映射、启用 Provider 的顺序操作；后台 debug 默认收起。</p>
     <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code> · <code>/api/admin/config-status</code></p>
     <nav>
       <a href="#overview">1. 总览</a>
       <a href="#public-control">2. 公开接口控制</a>
-      <a href="#provider-management">3. Provider 管理</a>
-      <a href="#mapping-workspace">4. 字段与数据源映射</a>
+      <a href="#mapping-workspace">3. 字段与数据源映射</a>
+      <a href="#provider-management">4. Provider 管理</a>
       <a href="#runtime-settings">5. 运行设置</a>
       <a href="#lookup-debug">高级调试</a>
     </nav>
@@ -91,43 +91,8 @@
       <div id="config-status" class="card">加载中</div>
     </section>
 
-    <section id="provider-management">
-      <h2>3. Provider 管理</h2>
-      <div class="two-col">
-        <div class="card" data-provider-config-panel>
-          <h3>Provider 配置</h3>
-          <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。</p>
-          <label class="pill"><input type="checkbox" data-public-custom-providers-enabled> 允许自定义 Provider 用于公开接口</label>
-          <label class="pill"><input type="checkbox" data-require-custom-provider-preview-ok> 要求自定义 Provider 验证成功后才用于公开接口</label>
-          <p class="small warn">当前公开接口正在使用的模式会在上方显示；只有显式允许后，自定义 Provider 才能进入公开接口。</p>
-          <div id="provider-config"></div>
-          <h3 style="margin-top:18px">字段开关</h3>
-          <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
-          <div id="field-config"></div>
-          <section id="runtime-settings" data-runtime-settings data-runtime-settings-panel style="margin-top:18px">
-            <h3>运行设置</h3>
-            <p class="small">运行设置已合并到 Provider 配置，因为它们会一起保存到同一份配置 JSON；这些设置不控制首页字段展示，也不改变 API 响应字段结构。</p>
-            <div class="runtime-settings-grid">
-              <div class="card" data-cache-settings><h3>缓存设置</h3><label class="pill"><input type="checkbox" data-runtime="cache.ip_enabled"> 启用 IP 查询缓存</label><label>IP 缓存 TTL <input type="number" min="1" data-runtime="cache.ip_ttl_seconds"></label><label>IP 缓存粒度 <select data-runtime="cache.ip_cache_granularity"><option value="single_ip">单 IP</option><option value="ipv4_24">IPv4 /24 网段</option></select></label><label class="pill"><input type="checkbox" data-runtime="cache.bgp_enabled"> 启用 BGP 缓存</label><label>BGP 缓存 TTL <input type="number" min="1" data-runtime="cache.bgp_ttl_seconds"></label></div>
-              <div class="card" data-rate-limit-settings><h3>访问限制设置</h3><label class="pill"><input type="checkbox" data-runtime="rate_limit.ip_enabled"> 启用 /api/ip 限流</label><label>/api/ip 每分钟 <input type="number" min="1" data-runtime="rate_limit.ip_per_minute"></label><label class="pill"><input type="checkbox" data-runtime="rate_limit.bgp_enabled"> 启用 /api/bgp 限流</label><label>/api/bgp 每分钟 <input type="number" min="1" data-runtime="rate_limit.bgp_per_minute"></label></div>
-              <div class="card" data-dns-settings><h3>DNS / DoH 设置</h3><label class="pill"><input type="checkbox" data-runtime="dns.system_dns_enabled"> 启用系统 DNS</label><label class="pill"><input type="checkbox" data-runtime="dns.doh_enabled"> 启用 DoH</label><label>DoH provider 顺序 <input data-runtime="dns.doh_providers" placeholder="cloudflare,google,quad9"></label><label>DNS 超时 <input type="number" min="0.1" step="0.1" data-runtime="dns.timeout_seconds"></label><label>IP 版本优先级 <input data-runtime="dns.ip_version_preference" placeholder="ipv4_first 或 ipv6_first"></label></div>
-              <div class="card" data-bgp-settings><h3>BGP 图谱设置</h3><label class="pill"><input type="checkbox" data-runtime="bgp.enabled"> 启用 BGP 图谱</label><label>默认上游数量 <input type="number" min="1" data-runtime="bgp.default_upstream_limit"></label><label>最大上游数量 <input type="number" min="1" data-runtime="bgp.max_upstream_limit"></label><label class="pill"><input type="checkbox" data-runtime="bgp.show_tier1"> 显示 Tier1 标记</label><label class="pill"><input type="checkbox" data-runtime="bgp.show_edge_state"> 显示稳定/观测边</label><label>BGP 缓存 TTL <input type="number" min="1" data-runtime="bgp.cache_ttl_seconds"></label></div>
-            </div>
-          </section>
-          <div class="action-row"><button id="save-provider-config" type="button">保存配置</button>
-          <button id="reset-provider-config" class="secondary" type="button" data-confirm-reset="重置会删除当前保存的后台配置，并让公开 /api/ip 回到默认生产链。确定继续吗？">恢复默认生产链</button></div>
-          <p class="small warn">重置会删除当前保存的后台配置，公开接口会立即回到默认生产链。</p>
-          <details style="margin-top:12px"><summary>查看配置 JSON</summary><pre id="provider-config-json">加载中</pre></details>
-        </div>
-        <div class="card">
-          <h3>Provider 卡片</h3>
-          <div id="providers" class="grid"></div>
-        </div>
-      </div>
-    </section>
-
     <section id="mapping-workspace" data-mapping-workspace>
-      <h2>4. 字段与数据源映射</h2>
+      <h2>3. 字段与数据源映射</h2>
       <p class="small">统一管理固定字段从哪些 Provider 的哪些原始字段取值；新增自定义 Provider 后，也在这里把测试结果映射到固定字段。</p>
       <div data-field-view data-field-catalog>
         <h3>字段视图</h3>
@@ -178,6 +143,41 @@
           <div id="custom-field-list" style="margin-top:12px"></div>
         </div>
       </div>
+      </div>
+    </section>
+
+    <section id="provider-management">
+      <h2>4. Provider 管理</h2>
+      <div class="two-col">
+        <div class="card" data-provider-config-panel>
+          <h3>Provider 配置</h3>
+          <p>保存 provider 启用状态、顺序、超时覆盖和字段开关。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。</p>
+          <label class="pill"><input type="checkbox" data-public-custom-providers-enabled> 允许自定义 Provider 用于公开接口</label>
+          <label class="pill"><input type="checkbox" data-require-custom-provider-preview-ok> 要求自定义 Provider 验证成功后才用于公开接口</label>
+          <p class="small warn">当前公开接口正在使用的模式会在上方显示；只有显式允许后，自定义 Provider 才能进入公开接口。</p>
+          <div id="provider-config"></div>
+          <h3 style="margin-top:18px">字段开关</h3>
+          <p class="small">取消勾选后，字段会在后台查询调试中置空/关闭，并同步从字段来源中移除。</p>
+          <div id="field-config"></div>
+          <section id="runtime-settings" data-runtime-settings data-runtime-settings-panel style="margin-top:18px">
+            <h3>运行设置</h3>
+            <p class="small">运行设置已合并到 Provider 配置，因为它们会一起保存到同一份配置 JSON；这些设置不控制首页字段展示，也不改变 API 响应字段结构。</p>
+            <div class="runtime-settings-grid">
+              <div class="card" data-cache-settings><h3>缓存设置</h3><label class="pill"><input type="checkbox" data-runtime="cache.ip_enabled"> 启用 IP 查询缓存</label><label>IP 缓存 TTL <input type="number" min="1" data-runtime="cache.ip_ttl_seconds"></label><label>IP 缓存粒度 <select data-runtime="cache.ip_cache_granularity"><option value="single_ip">单 IP</option><option value="ipv4_24">IPv4 /24 网段</option></select></label><label class="pill"><input type="checkbox" data-runtime="cache.bgp_enabled"> 启用 BGP 缓存</label><label>BGP 缓存 TTL <input type="number" min="1" data-runtime="cache.bgp_ttl_seconds"></label></div>
+              <div class="card" data-rate-limit-settings><h3>访问限制设置</h3><label class="pill"><input type="checkbox" data-runtime="rate_limit.ip_enabled"> 启用 /api/ip 限流</label><label>/api/ip 每分钟 <input type="number" min="1" data-runtime="rate_limit.ip_per_minute"></label><label class="pill"><input type="checkbox" data-runtime="rate_limit.bgp_enabled"> 启用 /api/bgp 限流</label><label>/api/bgp 每分钟 <input type="number" min="1" data-runtime="rate_limit.bgp_per_minute"></label></div>
+              <div class="card" data-dns-settings><h3>DNS / DoH 设置</h3><label class="pill"><input type="checkbox" data-runtime="dns.system_dns_enabled"> 启用系统 DNS</label><label class="pill"><input type="checkbox" data-runtime="dns.doh_enabled"> 启用 DoH</label><label>DoH provider 顺序 <input data-runtime="dns.doh_providers" placeholder="cloudflare,google,quad9"></label><label>DNS 超时 <input type="number" min="0.1" step="0.1" data-runtime="dns.timeout_seconds"></label><label>IP 版本优先级 <input data-runtime="dns.ip_version_preference" placeholder="ipv4_first 或 ipv6_first"></label></div>
+              <div class="card" data-bgp-settings><h3>BGP 图谱设置</h3><label class="pill"><input type="checkbox" data-runtime="bgp.enabled"> 启用 BGP 图谱</label><label>默认上游数量 <input type="number" min="1" data-runtime="bgp.default_upstream_limit"></label><label>最大上游数量 <input type="number" min="1" data-runtime="bgp.max_upstream_limit"></label><label class="pill"><input type="checkbox" data-runtime="bgp.show_tier1"> 显示 Tier1 标记</label><label class="pill"><input type="checkbox" data-runtime="bgp.show_edge_state"> 显示稳定/观测边</label><label>BGP 缓存 TTL <input type="number" min="1" data-runtime="bgp.cache_ttl_seconds"></label></div>
+            </div>
+          </section>
+          <div class="action-row"><button id="save-provider-config" type="button">保存配置</button>
+          <button id="reset-provider-config" class="secondary" type="button" data-confirm-reset="重置会删除当前保存的后台配置，并让公开 /api/ip 回到默认生产链。确定继续吗？">恢复默认生产链</button></div>
+          <p class="small warn">重置会删除当前保存的后台配置，公开接口会立即回到默认生产链。</p>
+          <details style="margin-top:12px"><summary>查看配置 JSON</summary><pre id="provider-config-json">加载中</pre></details>
+        </div>
+        <div class="card">
+          <h3>Provider 卡片</h3>
+          <div id="providers" class="grid"></div>
+        </div>
       </div>
     </section>
 

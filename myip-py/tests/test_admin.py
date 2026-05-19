@@ -20,8 +20,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "管理控制台" in body
     assert "1. 总览" in body
     assert "2. 公开接口控制" in body
-    assert "3. Provider 管理" in body
-    assert "4. 字段与数据源映射" in body
+    assert "3. 字段与数据源映射" in body
+    assert "4. Provider 管理" in body
     assert "字段视图" in body
     assert "Provider 视图" in body
     assert "新增数据源" in body
@@ -150,6 +150,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr)" in body
     assert "minmax(0,1fr)" in body
     assert "collectProviderConfig().runtime_settings" in body
+    assert body.index('id="mapping-workspace"') < body.index('id="provider-management"')
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
