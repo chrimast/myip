@@ -668,6 +668,42 @@ def record_custom_provider_preview(provider_id: str, preview: dict[str, Any]) ->
     return preview
 
 
+def save_preview_field_mappings(provider_id: str, preview: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    config = read_provider_config()
+    provider = custom_provider_by_id(provider_id)
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in config["custom_fields"]}
+    normalized = preview.get("normalized") or {}
+    sources = preview.get("field_sources") or {}
+    if not isinstance(normalized, dict) or not isinstance(sources, dict):
+        raise HTTPException(status_code=422, detail="preview normalized fields are invalid")
+
+    current = dict(config.get("field_mappings", {}))
+    applied: dict[str, dict[str, Any]] = {}
+    for field in sorted(normalized):
+        if field not in known_fields or field not in sources:
+            continue
+        source_path = sources[field]
+        provider_paths = provider.get("field_paths", {}).get(field) or [source_path]
+        mapping = current.get(field) or _default_field_mapping(field)
+        providers = {key: list(value) for key, value in (mapping.get("providers") or {}).items()}
+        priority = list(mapping.get("provider_priority") or providers)
+        paths = [source_path, *[path for path in provider_paths if path != source_path]]
+        providers[provider_id] = paths
+        priority = [provider_id, *[item for item in priority if item != provider_id]]
+        current[field] = {"providers": providers, "provider_priority": priority}
+        applied[field] = {"provider": provider_id, "paths": paths}
+    write_provider_config({**_persistable_config(config), "field_mappings": current})
+    return applied
+
+
+def _default_field_mapping(field_name: str) -> dict[str, Any]:
+    for field in FIELD_DEFINITIONS:
+        if field["field"] == field_name:
+            providers = dict(field.get("providers") or {})
+            return {"providers": providers, "provider_priority": _provider_priority(field_name, providers)}
+    return {"providers": {}, "provider_priority": []}
+
+
 def custom_provider_by_id(provider_id: str) -> dict[str, Any]:
     config = read_provider_config()
     for provider in config["custom_providers"]:

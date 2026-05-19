@@ -21,7 +21,19 @@ def test_admin_page_serves_provider_management_shell():
     assert "1. 总览" in body
     assert "2. 公开接口控制" in body
     assert "3. Provider 管理" in body
-    assert "4. 自定义扩展" in body
+    assert "4. 字段与数据源映射" in body
+    assert "字段视图" in body
+    assert "Provider 视图" in body
+    assert "新增数据源" in body
+    assert "data-mapping-workspace" in body
+    assert "data-field-view" in body
+    assert "data-provider-view" in body
+    assert "data-new-data-source" in body
+    assert "从测试结果生成字段映射" in body
+    assert "data-apply-preview-mapping" in body
+    assert "data-provider-source-row" in body
+    assert "data-field-provider-select" in body
+    assert "data-field-path-input" in body
     assert "高级调试" in body
     assert "5. 运行设置" in body
     assert "缓存设置" in body
@@ -48,7 +60,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "步骤 4：测试验证" in body
     assert "步骤 5：启用" in body
     assert "字段管理" in body
-    assert "6. 字段说明" in body
+    assert "字段视图" in body
     assert "固定字段名称" in body
     assert "Provider 字段引用" in body
     assert "字段优先级" in body
@@ -81,6 +93,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "公开接口模式" in body
     assert "/api/admin/config-status" in body
     assert "恢复默认生产链" in body
+    assert "字段与数据源映射" in body
     assert "自定义 Provider" in body
     assert "自定义字段" in body
     assert "/api/admin/custom-providers" in body
@@ -900,6 +913,54 @@ def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields(t
     assert provider["last_preview"]["normalized_fields"] == ["asn", "asn_owner", "country", "fraud_score", "is_proxy"]
     assert provider["last_preview"]["missing_fields"] == []
     assert re.match(r"^\d{4}-\d{2}-\d{2}T", provider["last_preview"]["checked_at"])
+
+
+def test_admin_custom_provider_preview_can_apply_extracted_paths_to_field_mappings(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = TestClient(app)
+    client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "mapping-provider",
+            "name": "Mapping Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["asn_owner", "org", "is_proxy"],
+            "field_paths": {
+                "asn_owner": ["asn.name"],
+                "org": ["company.name"],
+                "is_proxy": ["risk.proxy"],
+            },
+            "transforms": {"is_proxy": "bool"},
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("https://api.example.com/ip/8.8.8.8").respond(
+            200,
+            json={"asn": {"name": "Example ASN"}, "company": {"name": "Example Inc"}, "risk": {"proxy": "false"}},
+        )
+        response = client.post(
+            "/api/admin/custom-providers/preview",
+            json={"ip": "8.8.8.8", "provider_id": "mapping-provider", "apply_field_mappings": True},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied_field_mappings"] == {
+        "asn_owner": {"provider": "mapping-provider", "paths": ["asn.name"]},
+        "is_proxy": {"provider": "mapping-provider", "paths": ["risk.proxy"]},
+        "org": {"provider": "mapping-provider", "paths": ["company.name"]},
+    }
+    fields = {field["field"]: field for field in client.get("/api/admin/fields").json()}
+    assert fields["asn_owner"]["mapping_source"] == "admin"
+    assert fields["asn_owner"]["provider_mappings"][0] == {
+        "provider": "mapping-provider",
+        "paths": ["asn.name"],
+        "priority": 1,
+    }
+    assert fields["org"]["provider_mappings"][0]["provider"] == "mapping-provider"
+    assert fields["is_proxy"]["provider_mappings"][0]["provider"] == "mapping-provider"
 
 
 def test_admin_custom_provider_preview_records_failure_for_saved_provider(tmp_path, monkeypatch):

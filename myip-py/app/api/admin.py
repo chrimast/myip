@@ -14,6 +14,7 @@ from app.services.admin_config import (
     PROVIDER_DEFINITIONS,
     read_provider_config,
     record_custom_provider_preview,
+    save_preview_field_mappings,
     reset_provider_config,
     save_field_mappings,
     save_runtime_settings,
@@ -102,7 +103,10 @@ def custom_provider_preview(payload: dict) -> dict:
             },
         )
         raise
-    return record_custom_provider_preview(provider_id, {**preview, "status": "ok", "ip": payload.get("ip")})
+    result = record_custom_provider_preview(provider_id, {**preview, "status": "ok", "ip": payload.get("ip")})
+    if payload.get("apply_field_mappings"):
+        result = {**result, "applied_field_mappings": save_preview_field_mappings(provider_id, result)}
+    return result
 
 
 @router.delete("/custom-providers/{provider_id}")
