@@ -132,6 +132,12 @@ def test_admin_page_serves_provider_management_shell():
     assert "provider-config-mobile-controls" in body
     assert "data-provider-config-mobile-three-col" in body
     assert "grid-template-columns:repeat(3,minmax(0,1fr))" in body
+    assert "provider-config-control" in body
+    assert "data-provider-config-id" in body
+    assert "provider-config-control-label" in body
+    assert "provider-config-control-input" in body
+    assert "grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr)" in body
+    assert "minmax(0,1fr)" in body
     assert "collectProviderConfig().runtime_settings" in body
 
 
