@@ -18,10 +18,17 @@ def test_admin_page_serves_provider_management_shell():
     body = response.text
     assert "Provider 管理" in body
     assert "管理控制台" in body
-    assert "1. 总览" in body
-    assert "2. 公开接口控制" in body
-    assert "3. 字段与数据源映射" in body
-    assert "4. Provider 管理" in body
+    assert "1. 网站概览" in body
+    assert "2. 字段与数据源映射" in body
+    assert "3. Provider 管理" in body
+    assert "功能页面" in body
+    assert "data-page-card-nav" in body
+    assert "data-page-card=\"site-overview\"" in body
+    assert "网站概览" in body
+    assert "总览与公开接口控制已合并" in body
+    assert "data-site-overview" in body
+    assert "data-overview-status-card" in body
+    assert "data-public-control-card" in body
     assert "字段视图" in body
     assert "Provider 视图" in body
     assert "新增数据源" in body
@@ -37,7 +44,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-provider-select" in body
     assert "data-field-path-input" in body
     assert "高级调试" in body
-    assert "5. 运行设置" in body
+    assert "4. 运行设置" in body
     assert "缓存设置" in body
     assert "访问限制设置" in body
     assert "DNS / DoH 设置" in body
@@ -151,19 +158,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "minmax(0,1fr)" in body
     assert "collectProviderConfig().runtime_settings" in body
     assert body.index('id="mapping-workspace"') < body.index('id="provider-management"')
-    assert "数据接口导航" in body
-    assert "data-api-nav" in body
-    assert "data-api-page=\"settings\"" in body
-    assert "data-api-page=\"providers\"" in body
-    assert "data-api-page=\"fields\"" in body
-    assert "data-api-page=\"lookup\"" in body
-    assert "data-api-page=\"config-status\"" in body
-    assert "接口页面：/api/admin/settings" in body
-    assert "接口页面：/api/admin/providers" in body
-    assert "接口页面：/api/admin/fields" in body
-    assert "接口页面：/api/admin/lookup" in body
-    assert "接口页面：/api/admin/config-status" in body
-    assert "data-api-response" in body
+    assert "数据接口导航" not in body
+    assert "data-api-nav" not in body
+    assert "data-api-page=\"settings\"" not in body
+    assert "接口页面：/api/admin/settings" not in body
+    assert "data-api-response" not in body
     assert "认证方式" in body
     assert "无需认证" in body
     assert "API Key" in body
