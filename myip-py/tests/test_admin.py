@@ -93,6 +93,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "非评分字段" in body
     assert "data-scoring-fields" in body
     assert "data-display-fields" in body
+    assert "data-field-groups-grid" in body
+    assert "field-groups-grid" in body
+    assert "字段开关已合并到评分字段和非评分字段" in body
     assert "编辑字段映射" in body
     assert "保存字段映射" in body
     assert "data-field-mapping-editor" in body
@@ -105,7 +108,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/lookup" in body
     assert "Provider 配置" in body
     assert "/api/admin/provider-config" in body
-    assert "字段开关" in body
+    assert "<h3 style=\"margin-top:18px\">字段开关</h3>" not in body
     assert "data-field-enabled" in body
     assert "Provider 调用链" in body
     assert "禁用字段" in body
