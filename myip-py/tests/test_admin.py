@@ -30,7 +30,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-overview-status-card" in body
     assert "data-public-control-card" in body
     assert "字段视图" in body
-    assert "Provider 视图" in body
+    assert "Provider 总览" in body
+    assert "Provider 视图与原 Provider 概览已合并" in body
     assert "新增数据源" in body
     assert "按字段查看评分字段" not in body
     assert "添加自定义 Provider、测试返回 JSON" not in body
@@ -61,7 +62,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "当前公开接口正在使用" in body
     assert "启用 Provider" in body
     assert "验证风险" in body
-    assert "Provider 卡片" in body
+    assert "Provider 卡片" not in body
     assert "data-provider-card" in body
     assert "步骤 1：基本信息" in body
     assert "步骤 2：Endpoint" in body
