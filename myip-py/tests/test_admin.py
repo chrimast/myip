@@ -129,6 +129,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "运行设置已合并到 Provider 配置" in body
     assert "data-runtime-settings-panel" in body
     assert "provider-config-mobile-row" in body
+    assert "provider-config-mobile-controls" in body
+    assert "data-provider-config-mobile-three-col" in body
+    assert "grid-template-columns:repeat(3,minmax(0,1fr))" in body
     assert "collectProviderConfig().runtime_settings" in body
 
 
