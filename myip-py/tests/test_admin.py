@@ -48,7 +48,10 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-provider-select" in body
     assert "data-field-path-input" in body
     assert "高级调试" in body
-    assert "4. 运行设置" in body
+    assert "4. 运行设置" not in body
+    assert "运行设置已并入网站概览" in body
+    assert "data-site-runtime-settings" in body
+    assert body.index('data-site-runtime-settings') < body.index('id="mapping-workspace"')
     assert "缓存设置" in body
     assert "访问限制设置" in body
     assert "DNS / DoH 设置" in body
@@ -152,7 +155,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "@media (max-width:720px)" in body
     assert "data-mobile-provider-config-list" in body
     assert "data-provider-config-panel" in body
-    assert "运行设置会随保存配置写入同一份 JSON" in body
+    assert "provider-management-stack" in body
+    assert "保存与公开控制" in body
+    assert "运行设置会随保存配置写入同一份 JSON" not in body
     assert "data-runtime-settings-panel" in body
     assert "provider-config-mobile-row" in body
     assert "provider-config-mobile-controls" in body
