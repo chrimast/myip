@@ -120,6 +120,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "清空表单" in body
     assert "data-clear-custom-provider-form" in body
     assert "data-clear-custom-field-form" in body
+    assert "color-scheme: light" in body
+    assert "data-light-admin-theme" in body
+    assert "data-mobile-layout" in body
+    assert "@media (max-width:720px)" in body
+    assert "grid-template-columns:1fr" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
