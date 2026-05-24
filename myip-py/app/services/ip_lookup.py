@@ -324,11 +324,7 @@ class IPAPIIsLookupProvider:
             city=_string(data, "city") or None,
             asn=_format_asn(_first_string(_string(data, "asn"), _string(asn, "asn"))),
             asn_owner=_first_string(_string(asn, "name"), _string(data, "asn_name"), _string(data, "as_name")),
-            org=_first_string(_string(data, "org"), _string(data, "hostname")),
-            isp=_first_string(_string(data, "org"), _string(data, "hostname")),
-            latitude=latitude,
-            longitude=longitude,
-            asn_domain=_first_string(_string(asn, "domain"), _string(data, "asn_domain")),
+            asn_domain=_first_string(_string(asn, "domain"), _string(data, "asn_domain"), _string(data, "as_domain")),
             provider="ipinfo.io",
             network_type=_first_string(_string(asn, "type"), _string(data, "network_type")),
         )

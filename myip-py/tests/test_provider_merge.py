@@ -76,6 +76,73 @@ def test_provider_merges_partial_results_and_tracks_field_sources(monkeypatch):
     }
 
 
+def test_ipinfo_asn_fallback_does_not_use_asn_org_as_enterprise_or_isp(monkeypatch):
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        calls.append(url)
+        if url == "https://api.ipapi.is":
+            return FakeResponse(
+                {
+                    "ip": "203.0.113.10",
+                    "location": {"country": {"name": "Exampleland", "code": "EX"}, "city": "Example City"},
+                    "asn": {"asn": 64500, "org": "IPAPI ASN Owner"},
+                    "company": {"name": "IPAPI Customer Company", "domain": "customer.example"},
+                    "isp": "IPAPI Access ISP",
+                }
+            )
+        if url == "https://ipinfo.io/203.0.113.10/json":
+            return FakeResponse(
+                {
+                    "ip": "203.0.113.10",
+                    "country": "EX",
+                    "org": "AS64500 Wrong ASN Org String",
+                    "asn": {"asn": "AS64500", "name": "IPInfo Better ASN Owner", "domain": "ipinfo-asn.example"},
+                }
+            )
+        if url == "https://api.ipdata.co/203.0.113.10":
+            return FakeResponse(
+                {
+                    "ip": "203.0.113.10",
+                    "asn": {"asn": "64500", "name": "IPData ASN Owner", "domain": "ipdata-asn.example"},
+                    "organisation": "IPData Organisation",
+                    "isp": "IPData ISP",
+                }
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("203.0.113.10")
+
+    assert calls == [
+        "https://api.ipapi.is",
+        "https://ipinfo.io/203.0.113.10/json",
+        "https://api.ipdata.co/203.0.113.10",
+    ]
+    assert result.asn == "AS64500"
+    assert result.asn_owner == "IPAPI ASN Owner"
+    assert result.org == "IPAPI Customer Company"
+    assert result.isp == "IPAPI Access ISP"
+    assert result.asn_domain == "ipinfo-asn.example"
+    assert result.org_domain == "customer.example"
+    assert result.field_sources["asn_owner"] == "ipapi.is"
+    assert result.field_sources["org"] == "ipapi.is"
+    assert result.field_sources["isp"] == "ipapi.is"
+    assert result.field_sources["asn_domain"] == "ipinfo.io"
+    assert result.field_sources["org_domain"] == "ipapi.is"
+
+
 def test_provider_maps_extra_ipapi_is_security_flags(monkeypatch):
     class FakeResponse:
         def __init__(self, payload: dict) -> None:
