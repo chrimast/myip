@@ -1,7 +1,9 @@
+import ipaddress
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import Settings, get_settings
+from app.services.admin_auth import require_admin_auth
 from app.services.admin_config import (
     add_custom_field,
     add_custom_provider,
@@ -13,7 +15,9 @@ from app.services.admin_config import (
     delete_custom_provider,
     PROVIDER_DEFINITIONS,
     read_provider_config,
+    public_admin_auth_config,
     record_custom_provider_preview,
+    save_admin_auth_config,
     save_preview_field_mappings,
     reset_provider_config,
     save_field_mappings,
@@ -35,7 +39,7 @@ from app.services.ip_lookup import (
 )
 from app.services.target_ip import DNSResolutionError, resolve_target
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin_auth)])
 
 
 @router.get("/settings")
@@ -63,6 +67,16 @@ def runtime_settings() -> dict:
     return read_provider_config()["runtime_settings"]
 
 
+@router.get("/auth-config")
+def auth_config() -> dict:
+    return public_admin_auth_config()
+
+
+@router.put("/auth-config")
+def update_auth_config(payload: dict) -> dict:
+    return save_admin_auth_config(payload)
+
+
 @router.put("/runtime-settings")
 def update_runtime_settings(payload: dict) -> dict:
     return save_runtime_settings(payload)
@@ -88,7 +102,7 @@ def custom_provider_preview(payload: dict) -> dict:
     provider_id = payload.get("provider_id")
     if not provider_id:
         return preview_custom_provider(payload)
-    provider = custom_provider_by_id(provider_id)
+    provider = custom_provider_by_id(provider_id, include_secrets=True)
     try:
         preview = preview_custom_provider({"ip": payload.get("ip"), "provider": provider})
     except HTTPException as exc:
@@ -122,6 +136,19 @@ def create_custom_field(payload: dict) -> dict:
 @router.delete("/custom-fields/{field}")
 def remove_custom_field(field: str) -> dict:
     return delete_custom_field(field)
+
+
+@router.get("/provider-config/export")
+def export_provider_config() -> dict:
+    return {"kind": "myip-py-admin-provider-config", "config": read_provider_config()}
+
+
+@router.post("/provider-config/import")
+def import_provider_config(payload: dict) -> dict:
+    config = payload.get("config") if isinstance(payload, dict) else None
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=422, detail="config must be an object")
+    return write_provider_config(config)
 
 
 @router.post("/provider-config/reset")
@@ -175,7 +202,7 @@ def _public_custom_provider_warnings(config: dict, public_custom: bool) -> list[
 
 
 def admin_ip_lookup_provider():
-    custom_providers = {provider["id"]: provider for provider in read_provider_config()["custom_providers"]}
+    custom_providers = {provider["id"]: provider for provider in read_provider_config(include_secrets=True)["custom_providers"]}
 
     def provider_factory(provider_id: str, timeout_seconds: float | None):
         if provider_id in custom_providers:
@@ -183,6 +210,42 @@ def admin_ip_lookup_provider():
         return default_provider_factory(provider_id, timeout_seconds)
 
     return provider_factory
+
+
+@router.get("/provider-health")
+def provider_health(ip: str = Query("8.8.8.8", min_length=1), provider_factory=Depends(admin_ip_lookup_provider)) -> dict:
+    try:
+        checked_ip = str(ipaddress.ip_address(ip))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="ip must be a valid IP address") from exc
+    config_by_id = {provider["id"]: provider for provider in read_provider_config(include_secrets=True)["providers"]}
+    providers = []
+    summary = {"ok": 0, "error": 0, "disabled": 0}
+    for provider in admin_providers(get_settings()):
+        configured = config_by_id.get(provider["id"], {})
+        enabled = bool(configured.get("enabled", provider.get("enabled", True)))
+        item = {
+            "id": provider["id"],
+            "enabled": enabled,
+            "order": configured.get("order", provider.get("order")),
+            "timeout_seconds": configured.get("timeout_seconds", provider.get("timeout_override_seconds")),
+            "custom": bool(provider.get("custom", False)),
+        }
+        if not enabled:
+            item["status"] = "disabled"
+            summary["disabled"] += 1
+            providers.append(item)
+            continue
+        try:
+            result = provider_factory(provider["id"], item["timeout_seconds"]).lookup(checked_ip)
+            fields = sorted(field for field, value in result.model_dump().items() if value not in (None, "", False, []))
+            item.update({"status": "ok", "fields": fields, "provider": result.provider})
+            summary["ok"] += 1
+        except Exception as exc:  # health check reports failures instead of failing the whole endpoint
+            item.update({"status": "error", "error": str(exc), "fields": []})
+            summary["error"] += 1
+        providers.append(item)
+    return {"checked_ip": checked_ip, "summary": summary, "providers": providers}
 
 
 @router.get("/lookup")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -12,6 +14,7 @@ from app.services.ip_lookup import FIELD_PRIORITY_GROUPS, PROVIDER_FIELD_PRIORIT
 
 PROVIDER_CONFIG_PATH = Path("data/admin_provider_config.json")
 CONFIG_VERSION = 1
+AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
 
 PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -352,7 +355,7 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
             "ipwho.is": ["connection.isp", "connection.org"],
             "ip-api.com": ["isp", "org"],
             "ipapi.org": ["isp", "org", "asn.name"],
-            "ipinfo.io": ["org", "hostname"],
+            "ipinfo.io": ["hostname"],
             "ipdata.co": ["asn.name", "organisation", "isp"],
         },
     },
@@ -367,7 +370,7 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
             "ipwho.is": ["connection.org"],
             "ip-api.com": ["org"],
             "ipapi.org": ["org", "asn.name"],
-            "ipinfo.io": ["org", "hostname"],
+            "ipinfo.io": ["hostname"],
             "ipdata.co": ["organisation", "isp", "asn.name"],
         },
     },
@@ -395,7 +398,7 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
         "providers": {
             "ipapi.is": ["asn.domain"],
             "ipwho.is": ["connection.domain"],
-            "ipinfo.io": ["asn.domain", "asn_domain"],
+            "ipinfo.io": ["asn.domain", "asn_domain", "as_domain"],
             "ipdata.co": ["asn.domain"],
         },
     },
@@ -513,7 +516,12 @@ def default_provider_config() -> dict[str, Any]:
     }
 
 
-def read_provider_config() -> dict[str, Any]:
+def read_provider_config(*, include_secrets: bool = False) -> dict[str, Any]:
+    config = _read_provider_config()
+    return config if include_secrets else _redact_provider_config(config)
+
+
+def _read_provider_config() -> dict[str, Any]:
     config = default_provider_config()
     exists = PROVIDER_CONFIG_PATH.exists()
     if exists:
@@ -522,6 +530,24 @@ def read_provider_config() -> dict[str, Any]:
     config["storage_path"] = str(PROVIDER_CONFIG_PATH)
     config["exists"] = exists
     return config
+
+
+def _redact_provider_config(config: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(config)
+    redacted["custom_providers"] = [_redact_custom_provider(provider) for provider in config.get("custom_providers", [])]
+    return redacted
+
+
+def _redact_custom_provider(provider: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(provider)
+    auth = redacted.get("auth")
+    if isinstance(auth, dict):
+        redacted["auth"] = {
+            "type": auth.get("type", "none"),
+            "name": auth.get("name"),
+            "configured": bool(auth.get("value")),
+        }
+    return redacted
 
 
 def write_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -599,7 +625,7 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
             detail="require_custom_provider_preview_ok requires public custom providers to be enabled",
         )
 
-    return {
+    normalized = {
         "version": CONFIG_VERSION,
         "providers": sorted(merged_providers.values(), key=lambda item: (item["order"], item["id"])),
         "field_overrides": normalized_fields,
@@ -610,17 +636,20 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "public_custom_providers_enabled": bool(payload.get("public_custom_providers_enabled", False)),
         "require_custom_provider_preview_ok": bool(payload.get("require_custom_provider_preview_ok", False)),
     }
+    if "admin_auth" in payload:
+        normalized["admin_auth"] = _normalize_admin_auth(payload["admin_auth"])
+    return normalized
 
 
 def add_custom_provider(payload: dict[str, Any]) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     providers = [provider for provider in config["custom_providers"] if provider["id"] != payload.get("id")]
     providers.append(_normalize_custom_provider(payload))
     return write_provider_config({**_persistable_config(config), "custom_providers": providers})
 
 
 def delete_custom_provider(provider_id: str) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     providers = [provider for provider in config["custom_providers"] if provider["id"] != provider_id]
     configured_providers = [provider for provider in config["providers"] if provider["id"] != provider_id]
     return write_provider_config(
@@ -629,14 +658,14 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
 
 
 def add_custom_field(payload: dict[str, Any]) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     fields = [field for field in config["custom_fields"] if field["field"] != payload.get("field")]
     fields.append(_normalize_custom_field(payload))
     return write_provider_config({**_persistable_config(config), "custom_fields": fields})
 
 
 def delete_custom_field(field: str) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     fields = [item for item in config["custom_fields"] if item["field"] != field]
     config["field_overrides"].pop(field, None)
     config.get("field_mappings", {}).pop(field, None)
@@ -644,7 +673,7 @@ def delete_custom_field(field: str) -> dict[str, Any]:
 
 
 def save_field_mappings(payload: dict[str, Any]) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in config["custom_fields"]}
     known_providers = {provider["id"] for provider in PROVIDER_DEFINITIONS} | {provider["id"] for provider in config["custom_providers"]}
     mappings = _normalize_field_mappings(payload, known_fields, known_providers)
@@ -653,7 +682,7 @@ def save_field_mappings(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def record_custom_provider_preview(provider_id: str, preview: dict[str, Any]) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     providers = []
     found = False
     for provider in config["custom_providers"]:
@@ -669,7 +698,7 @@ def record_custom_provider_preview(provider_id: str, preview: dict[str, Any]) ->
 
 
 def save_preview_field_mappings(provider_id: str, preview: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     provider = custom_provider_by_id(provider_id)
     known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in config["custom_fields"]}
     normalized = preview.get("normalized") or {}
@@ -704,8 +733,8 @@ def _default_field_mapping(field_name: str) -> dict[str, Any]:
     return {"providers": {}, "provider_priority": []}
 
 
-def custom_provider_by_id(provider_id: str) -> dict[str, Any]:
-    config = read_provider_config()
+def custom_provider_by_id(provider_id: str, *, include_secrets: bool = False) -> dict[str, Any]:
+    config = read_provider_config(include_secrets=include_secrets)
     for provider in config["custom_providers"]:
         if provider["id"] == provider_id:
             return provider
@@ -713,7 +742,7 @@ def custom_provider_by_id(provider_id: str) -> dict[str, Any]:
 
 
 def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
-    return {
+    persisted = {
         "providers": config["providers"],
         "field_overrides": config["field_overrides"],
         "field_mappings": config.get("field_mappings", {}),
@@ -723,10 +752,71 @@ def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
         "public_custom_providers_enabled": config.get("public_custom_providers_enabled", False),
         "require_custom_provider_preview_ok": config.get("require_custom_provider_preview_ok", False),
     }
+    if "admin_auth" in config:
+        persisted["admin_auth"] = config["admin_auth"]
+    return persisted
+
+
+def default_admin_auth_config() -> dict[str, Any]:
+    return {
+        "username": "admin",
+        "password_hash": hash_admin_password("admin"),
+    }
+
+
+def hash_admin_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000).hex()
+    return f"{AUTH_HASH_ALGORITHM}${salt}${digest}"
+
+
+def verify_admin_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, salt, expected = password_hash.split("$", 2)
+    except ValueError:
+        return False
+    if algorithm != AUTH_HASH_ALGORITHM:
+        return False
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000).hex()
+    return secrets.compare_digest(digest, expected)
+
+
+def read_admin_auth_config() -> dict[str, Any]:
+    return read_provider_config(include_secrets=True).get("admin_auth", default_admin_auth_config())
+
+
+def public_admin_auth_config() -> dict[str, Any]:
+    auth = read_admin_auth_config()
+    return {"username": auth.get("username", "admin"), "password_configured": bool(auth.get("password_hash"))}
+
+
+def save_admin_auth_config(payload: dict[str, Any]) -> dict[str, Any]:
+    config = read_provider_config(include_secrets=True)
+    current = config.get("admin_auth") or default_admin_auth_config()
+    auth = _normalize_admin_auth(
+        {
+            "username": payload.get("username", current.get("username", "admin")),
+            "password_hash": hash_admin_password(payload["password"]) if payload.get("password") else current.get("password_hash"),
+        }
+    )
+    write_provider_config({**_persistable_config(config), "admin_auth": auth})
+    return {"username": auth["username"], "password_configured": bool(auth.get("password_hash"))}
+
+
+def _normalize_admin_auth(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="admin_auth must be an object")
+    username = str(payload.get("username") or "admin").strip()
+    if not username:
+        raise HTTPException(status_code=422, detail="admin username is required")
+    password_hash = str(payload.get("password_hash") or "").strip()
+    if not password_hash:
+        password_hash = default_admin_auth_config()["password_hash"]
+    return {"username": username, "password_hash": password_hash}
 
 
 def save_runtime_settings(payload: dict[str, Any]) -> dict[str, Any]:
-    config = read_provider_config()
+    config = read_provider_config(include_secrets=True)
     runtime_settings = _normalize_runtime_settings(payload)
     write_provider_config({**_persistable_config(config), "runtime_settings": runtime_settings})
     return runtime_settings
@@ -846,8 +936,9 @@ def _normalize_custom_provider(payload: Any) -> dict[str, Any]:
         "role": "custom metadata",
         "fallback_phase": "custom",
         "endpoint": _non_empty_text(payload.get("endpoint"), "endpoint"),
-        "requires_key": bool(payload.get("requires_key", False)),
-        "key_name": payload.get("key_name"),
+        "requires_key": bool(payload.get("requires_key", False)) or _normalize_auth(payload).get("type") != "none",
+        "key_name": payload.get("key_name") or _normalize_auth(payload).get("name"),
+        "auth": _normalize_auth(payload),
         "provides": provides,
         "field_paths": _field_path_map(payload.get("field_paths", {}), provides),
         "transforms": _transform_map(payload.get("transforms", {}), provides),
@@ -855,6 +946,26 @@ def _normalize_custom_provider(payload: Any) -> dict[str, Any]:
         "custom": True,
     }
 
+
+def _normalize_auth(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = payload.get("auth") or {}
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="auth must be an object")
+    auth_type = raw.get("type") or ("api_key" if payload.get("requires_key") else "none")
+    if auth_type not in {"none", "api_key", "bearer_token"}:
+        raise HTTPException(status_code=422, detail="auth type is invalid")
+    name = raw.get("name") or payload.get("key_name")
+    value = raw.get("value")
+    if auth_type == "none":
+        return {"type": "none", "name": None, "value": None}
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=422, detail="auth name is required")
+    configured_without_value = bool(raw.get("configured")) or "value" in raw
+    if not isinstance(value, str) or not value.strip():
+        if configured_without_value:
+            return {"type": auth_type, "name": name.strip(), "value": None}
+        raise HTTPException(status_code=422, detail="auth value is required")
+    return {"type": auth_type, "name": name.strip(), "value": value.strip()}
 
 def _normalize_field_mappings(value: Any, known_fields: set[str], known_providers: set[str]) -> dict[str, dict[str, Any]]:
     if not isinstance(value, dict):

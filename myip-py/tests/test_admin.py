@@ -1,15 +1,147 @@
 import re
 
+import pytest
 import respx
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.api.admin import admin_ip_lookup_provider
+from app.core.config import get_settings
 from app.services.ip_lookup import IPInfo, IPLookupUnavailable, StaticIPLookupProvider
 
 
-def test_admin_page_serves_provider_management_shell():
+@pytest.fixture(autouse=True)
+def reset_settings_override():
+    app.dependency_overrides.pop(get_settings, None)
+    yield
+    app.dependency_overrides.pop(get_settings, None)
+
+
+class AdminAuthSettings:
+    ipapi_is_key = ""
+    ipapi_org_key = ""
+    ipinfo_token = ""
+    ipdata_key = ""
+    myip_debug = False
+    myip_cache_ttl_seconds = 120
+    myip_rate_limit_per_minute = 60
+    myip_provider_timeout_seconds = 8.0
+    myip_doh_timeout_seconds = 5.0
+    myip_doh_providers = "cloudflare,google,quad9"
+    myip_admin_username = "admin"
+    myip_admin_password = "admin"
+    myip_admin_session_secret = "test-session-secret"
+
+    def key_status(self):
+        return {
+            "ipapi_is_key": {"configured": False, "source": "missing"},
+            "ipapi_org_key": {"configured": False, "source": "missing"},
+            "ipinfo_token": {"configured": False, "source": "missing"},
+            "ipdata_key": {"configured": False, "source": "missing"},
+        }
+
+    def public_config(self):
+        return {
+            "debug": self.myip_debug,
+            "cache_ttl_seconds": self.myip_cache_ttl_seconds,
+            "rate_limit_per_minute": self.myip_rate_limit_per_minute,
+            "provider_timeout_seconds": self.myip_provider_timeout_seconds,
+            "doh_timeout_seconds": self.myip_doh_timeout_seconds,
+            "doh_providers": ["cloudflare", "google", "quad9"],
+        }
+
+    def doh_provider_names(self):
+        return ["cloudflare", "google", "quad9"]
+
+
+def enable_admin_auth() -> None:
+    app.dependency_overrides[get_settings] = lambda: AdminAuthSettings()
+
+
+def admin_client() -> TestClient:
     client = TestClient(app)
+    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+    assert login.status_code == 303
+    return client
+
+
+def test_admin_page_requires_login_when_admin_password_is_configured():
+    enable_admin_auth()
+    client = TestClient(app)
+
+    response = client.get("/admin")
+
+    assert response.status_code == 401
+    assert "后台登录" in response.text
+    assert "name=\"username\"" in response.text
+    assert "name=\"password\"" in response.text
+
+
+def test_admin_api_requires_login_when_admin_password_is_configured():
+    enable_admin_auth()
+    client = TestClient(app)
+
+    response = client.get("/api/admin/settings")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Admin authentication required"}
+
+
+def test_admin_login_session_allows_page_and_api_access():
+    enable_admin_auth()
+    client = TestClient(app)
+
+    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+
+    assert login.status_code == 303
+    assert login.headers["location"] == "/admin"
+    assert client.get("/admin").status_code == 200
+    assert client.get("/api/admin/settings").status_code == 200
+
+
+def test_admin_logout_clears_login_session():
+    enable_admin_auth()
+    client = TestClient(app)
+    assert client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False).status_code == 303
+
+    logout = client.post("/admin/logout", follow_redirects=False)
+
+    assert logout.status_code == 303
+    assert logout.headers["location"] == "/admin"
+    assert client.get("/api/admin/settings").status_code == 401
+
+
+def test_admin_auth_defaults_to_admin_admin_and_can_be_changed_after_login(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    enable_admin_auth()
+    client = TestClient(app)
+
+    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+
+    assert login.status_code == 303
+    assert client.get("/api/admin/auth-config").json() == {"username": "admin", "password_configured": True}
+    runtime_save = client.put(
+        "/api/admin/runtime-settings",
+        json={"cache": {"ip_enabled": False, "ip_ttl_seconds": 30, "ip_cache_granularity": "single_ip", "bgp_enabled": True, "bgp_ttl_seconds": 900}},
+    )
+    assert runtime_save.status_code == 200
+    assert client.get("/api/admin/provider-config").status_code == 200
+
+    update = client.put("/api/admin/auth-config", json={"username": "root", "password": "new-pass"})
+    assert update.status_code == 200
+    assert update.json() == {"username": "root", "password_configured": True}
+    assert "new-pass" not in config_path.read_text(encoding="utf-8")
+
+    old_session = client.get("/api/admin/settings")
+    assert old_session.status_code == 401
+    client.cookies.clear()
+    assert client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False).status_code == 401
+    assert client.post("/admin/login", data={"username": "root", "password": "new-pass"}, follow_redirects=False).status_code == 303
+    assert client.get("/api/admin/settings").status_code == 200
+
+def test_admin_page_serves_provider_management_shell():
+    client = admin_client()
 
     response = client.get("/admin")
 
@@ -17,6 +149,10 @@ def test_admin_page_serves_provider_management_shell():
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
     assert "Provider 管理" in body
+    assert "修改后台账号" in body
+    assert "data-admin-auth-settings" in body
+    assert "/api/admin/auth-config" in body
+    assert "默认用户名 admin / 默认密码 admin" in body
     assert "管理控制台" in body
     assert "1. 网站概览" in body
     assert "2. 字段与数据源映射" in body
@@ -84,7 +220,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-provider-field-details" in body
     assert "映射问题提示" in body
     assert "data-mapping-issues" in body
-    assert "字段管理" in body
+    assert "字段管理" not in body
     assert "字段视图" in body
     assert "固定字段名称" not in body
     assert "字段优先级" in body
@@ -186,10 +322,22 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-custom-provider-auth-name" in body
     assert "data-custom-provider-auth-value" in body
     assert "Key / Token 只保存在后台配置" in body
+    assert "测试与公开调用会按认证方式携带请求头" in body
+    assert "预览和公开调用是否真正使用它，后续再接入请求头/参数" not in body
+    assert "Provider 健康检查" in body
+    assert "data-provider-health" in body
+    assert "data-provider-health-status" in body
+    assert "/api/admin/provider-health" in body
+    assert "配置导入/导出" in body
+    assert "data-config-import-export" in body
+    assert "/api/admin/provider-config/export" in body
+    assert "/api/admin/provider-config/import" in body
+    assert "API Key 指引" in body
+    assert "data-api-key-guidance" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.get("/api/admin/settings")
 
@@ -208,7 +356,7 @@ def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
 def test_admin_runtime_settings_defaults_and_persistence(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     defaults = client.get("/api/admin/runtime-settings")
 
@@ -269,7 +417,7 @@ def test_admin_runtime_settings_defaults_and_persistence(tmp_path, monkeypatch):
 def test_admin_runtime_settings_reject_invalid_values(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.put(
         "/api/admin/runtime-settings",
@@ -283,7 +431,7 @@ def test_admin_runtime_settings_reject_invalid_values(tmp_path, monkeypatch):
 
 
 def test_admin_providers_api_describes_provider_order_keys_and_fields():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.get("/api/admin/providers")
 
@@ -314,7 +462,7 @@ def test_admin_providers_api_describes_provider_order_keys_and_fields():
 def test_admin_providers_api_includes_effective_provider_config(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={"providers": [{"id": "ipwho.is", "enabled": False, "order": 1, "timeout_seconds": 2.5}]},
@@ -331,7 +479,7 @@ def test_admin_providers_api_includes_effective_provider_config(tmp_path, monkey
 
 
 def test_admin_fields_api_marks_scoring_and_display_only_fields():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.get("/api/admin/fields")
 
@@ -357,8 +505,12 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["isp"]["scoring_details"]["participates"] is False
     assert fields["isp"]["provider_priority"] == ["ipapi.is", "ipwho.is", "ipinfo.io", "ipdata.co", "ip-api.com", "ipapi.org"]
     assert fields["asn_owner"]["providers"]["ipapi.is"] == ["asn.org"]
+    assert fields["asn_owner"]["providers"]["ipinfo.io"] == ["asn.name", "asn_name", "as_name"]
+    assert fields["asn_owner"]["providers"]["ipwho.is"] == ["connection.isp"]
     assert fields["asn_owner"]["provider_priority"][:3] == ["ipapi.is", "ipinfo.io", "ipdata.co"]
     assert fields["org"]["providers"]["ipapi.is"] == ["company.name"]
+    assert fields["org"]["providers"]["ipinfo.io"] == ["hostname"]
+    assert fields["org"]["providers"]["ipwho.is"] == ["connection.org"]
     assert fields["ip_source"]["scoring_details"]["rule"] == "比较注册归属地 reg_region 与实际出口 country_code/country"
     assert fields["is_hosting"]["scoring"] is True
 
@@ -366,7 +518,7 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
 def test_admin_field_mappings_api_persists_provider_paths_and_priority(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     saved = client.put(
         "/api/admin/field-mappings",
@@ -403,7 +555,7 @@ def test_admin_field_mappings_api_persists_provider_paths_and_priority(tmp_path,
 def test_admin_field_mappings_api_rejects_unknown_fields_and_providers(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.put(
         "/api/admin/field-mappings",
@@ -443,7 +595,7 @@ def test_admin_lookup_api_returns_enriched_result_and_field_sources():
         )
 
     app.dependency_overrides[admin_ip_lookup_provider] = lambda: fake_provider
-    client = TestClient(app)
+    client = admin_client()
 
     try:
         response = client.get("/api/admin/lookup", params={"target": "8.8.8.8"})
@@ -468,7 +620,7 @@ def test_admin_lookup_api_returns_enriched_result_and_field_sources():
 def test_admin_lookup_applies_disabled_field_overrides(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={
@@ -518,7 +670,7 @@ def test_admin_lookup_applies_disabled_field_overrides(tmp_path, monkeypatch):
 def test_admin_lookup_keeps_enabled_field_overrides(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={"field_overrides": {"network_type": {"enabled": True}, "is_hosting": {"enabled": True}}},
@@ -550,7 +702,7 @@ def test_admin_lookup_keeps_enabled_field_overrides(tmp_path, monkeypatch):
 
 
 def test_admin_lookup_api_rejects_invalid_target():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.get("/api/admin/lookup", params={"target": "=bad"})
 
@@ -560,7 +712,7 @@ def test_admin_lookup_api_rejects_invalid_target():
 def test_admin_lookup_uses_enabled_provider_order_from_config(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={
@@ -600,7 +752,7 @@ def test_admin_lookup_uses_enabled_provider_order_from_config(tmp_path, monkeypa
 def test_admin_lookup_falls_back_to_next_enabled_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={
@@ -641,7 +793,7 @@ def test_admin_lookup_falls_back_to_next_enabled_provider(tmp_path, monkeypatch)
 def test_admin_lookup_returns_502_when_all_enabled_providers_fail(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put("/api/admin/provider-config", json={"providers": [{"id": "ipapi.is", "enabled": True, "order": 1}]})
 
     def fake_provider_factory(provider_id: str, timeout_seconds: float | None):
@@ -659,7 +811,7 @@ def test_admin_lookup_returns_502_when_all_enabled_providers_fail(tmp_path, monk
 def test_admin_lookup_can_execute_enabled_custom_json_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post(
         "/api/admin/custom-providers",
         json={
@@ -724,7 +876,7 @@ def test_public_lookup_does_not_execute_enabled_custom_json_provider_by_default(
 
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     clear_ip_lookup_cache()
     client.post(
         "/api/admin/custom-providers",
@@ -767,7 +919,7 @@ def test_public_lookup_can_execute_custom_json_provider_when_explicitly_enabled(
 
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     clear_ip_lookup_cache()
     client.post(
         "/api/admin/custom-providers",
@@ -836,7 +988,7 @@ def test_public_lookup_skips_unverified_custom_provider_when_strict_preview_guar
 
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     clear_ip_lookup_cache()
     client.post(
         "/api/admin/custom-providers",
@@ -881,7 +1033,7 @@ def test_public_lookup_executes_verified_custom_provider_with_strict_preview_gua
 
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     clear_ip_lookup_cache()
     client.put(
         "/api/admin/provider-config",
@@ -924,10 +1076,178 @@ def test_public_lookup_executes_verified_custom_provider_with_strict_preview_gua
     assert response.json()["geo_provider"] == "verified-public-provider"
 
 
+def test_admin_provider_config_export_and_import_round_trip_redacted(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+    saved = client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "export-provider",
+            "name": "Export Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country"],
+            "field_paths": {"country": ["country"]},
+            "auth": {"type": "api_key", "name": "x-api-key", "value": "secret-for-export"},
+        },
+    )
+    assert saved.status_code == 200
+
+    exported = client.get("/api/admin/provider-config/export")
+
+    assert exported.status_code == 200
+    body = exported.json()
+    assert body["kind"] == "myip-py-admin-provider-config"
+    assert body["config"]["custom_providers"][0]["auth"] == {"type": "api_key", "name": "x-api-key", "configured": True}
+    assert "secret-for-export" not in str(body)
+
+    reset = client.post("/api/admin/provider-config/reset")
+    assert reset.status_code == 200
+    imported = client.post("/api/admin/provider-config/import", json={"config": body["config"]})
+
+    assert imported.status_code == 200
+    assert imported.json()["custom_providers"][0]["id"] == "export-provider"
+    assert imported.json()["custom_providers"][0]["auth"]["configured"] is False
+
+
+def test_admin_provider_config_import_rejects_invalid_payload(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
+    client = admin_client()
+
+    response = client.post("/api/admin/provider-config/import", json={"config": {"providers": [{"id": "missing-provider"}]}})
+
+    assert response.status_code == 422
+
+
+def test_custom_provider_auth_is_used_for_preview_and_redacted_from_admin_payloads(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+
+    created = client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "auth-provider",
+            "name": "Auth Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country"],
+            "field_paths": {"country": ["country"]},
+            "auth": {"type": "bearer_token", "name": "Authorization", "value": "secret-token"},
+        },
+    )
+    assert created.status_code == 200
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get("https://api.example.com/ip/8.8.8.8").respond(200, json={"country": "United States"})
+        response = client.post(
+            "/api/admin/custom-providers/preview",
+            json={"ip": "8.8.8.8", "provider_id": "auth-provider"},
+        )
+
+    assert response.status_code == 200
+    assert route.calls[0].request.headers["authorization"] == "Bearer secret-token"
+    provider_config = client.get("/api/admin/provider-config").json()["custom_providers"][0]
+    provider_catalog = next(provider for provider in client.get("/api/admin/providers").json() if provider["id"] == "auth-provider")
+    assert provider_config["auth"] == {"type": "bearer_token", "name": "Authorization", "configured": True}
+    assert "secret-token" not in str(provider_config)
+    assert provider_catalog["auth"] == {"type": "bearer_token", "name": "Authorization", "configured": True}
+
+
+def test_custom_provider_api_key_auth_uses_named_header_without_leaking_secret(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+
+    response = client.post(
+        "/api/admin/custom-providers",
+        json={
+            "id": "api-key-provider",
+            "name": "API Key Provider",
+            "endpoint": "https://api.example.com/ip/{ip}",
+            "provides": ["country"],
+            "field_paths": {"country": ["country"]},
+            "auth": {"type": "api_key", "name": "x-api-key", "value": "api-secret"},
+        },
+    )
+    assert response.status_code == 200
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get("https://api.example.com/ip/8.8.8.8").respond(200, json={"country": "United States"})
+        preview = client.post("/api/admin/custom-providers/preview", json={"ip": "8.8.8.8", "provider_id": "api-key-provider"})
+
+    assert preview.status_code == 200
+    assert route.calls[0].request.headers["x-api-key"] == "api-secret"
+    assert "api-secret" not in str(client.get("/api/admin/provider-config").json())
+
+
+def test_admin_provider_health_reports_enabled_provider_status(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ip-api.com", "enabled": True, "order": 1, "timeout_seconds": 1.0},
+                {"id": "ipapi.is", "enabled": False, "order": 2},
+                {"id": "ipwho.is", "enabled": False, "order": 3},
+                {"id": "ipapi.org", "enabled": False, "order": 4},
+                {"id": "ipinfo.io", "enabled": False, "order": 5},
+                {"id": "ipdata.co", "enabled": False, "order": 6},
+            ]
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("http://ip-api.com/json/8.8.8.8").respond(200, json={"status": "success", "query": "8.8.8.8", "country": "United States"})
+        response = client.get("/api/admin/provider-health?ip=8.8.8.8")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["checked_ip"] == "8.8.8.8"
+    assert body["summary"] == {"ok": 1, "error": 0, "disabled": 5}
+    ip_api = next(item for item in body["providers"] if item["id"] == "ip-api.com")
+    assert ip_api["status"] == "ok"
+    assert ip_api["enabled"] is True
+    assert ip_api["fields"]
+    ipwho = next(item for item in body["providers"] if item["id"] == "ipwho.is")
+    assert ipwho["status"] == "disabled"
+
+
+def test_admin_provider_health_records_provider_error_without_raising(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ip-api.com", "enabled": True, "order": 1, "timeout_seconds": 1.0},
+                {"id": "ipapi.is", "enabled": False, "order": 2},
+                {"id": "ipwho.is", "enabled": False, "order": 3},
+                {"id": "ipapi.org", "enabled": False, "order": 4},
+                {"id": "ipinfo.io", "enabled": False, "order": 5},
+                {"id": "ipdata.co", "enabled": False, "order": 6},
+            ]
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("http://ip-api.com/json/8.8.8.8").respond(500, json={"status": "fail"})
+        response = client.get("/api/admin/provider-health?ip=8.8.8.8")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["error"] == 1
+    item = next(item for item in body["providers"] if item["id"] == "ip-api.com")
+    assert item["status"] == "error"
+    assert item["error"]
+
+
 def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post(
         "/api/admin/custom-providers",
         json={
@@ -984,7 +1304,7 @@ def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields(t
 def test_admin_custom_provider_preview_can_apply_extracted_paths_to_field_mappings(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post(
         "/api/admin/custom-providers",
         json={
@@ -1032,7 +1352,7 @@ def test_admin_custom_provider_preview_can_apply_extracted_paths_to_field_mappin
 def test_admin_custom_provider_preview_records_failure_for_saved_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post(
         "/api/admin/custom-providers",
         json={
@@ -1061,7 +1381,7 @@ def test_admin_custom_provider_preview_records_failure_for_saved_provider(tmp_pa
 
 
 def test_admin_custom_provider_preview_uses_first_available_path_and_reports_missing():
-    client = TestClient(app)
+    client = admin_client()
 
     with respx.mock(assert_all_called=True) as router:
         router.get("https://api.example.com/8.8.4.4").respond(200, json={"company": {"name": "Example ISP"}})
@@ -1087,7 +1407,7 @@ def test_admin_custom_provider_preview_uses_first_available_path_and_reports_mis
 
 
 def test_admin_custom_provider_preview_rejects_plain_http_endpoint():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.post(
         "/api/admin/custom-providers/preview",
@@ -1102,7 +1422,7 @@ def test_admin_custom_provider_preview_rejects_plain_http_endpoint():
 
 
 def test_admin_custom_provider_preview_blocks_private_and_metadata_hosts():
-    client = TestClient(app)
+    client = admin_client()
 
     for endpoint in ["https://127.0.0.1/{ip}", "https://10.0.0.1/{ip}", "https://169.254.169.254/{ip}"]:
         response = client.post(
@@ -1117,7 +1437,7 @@ def test_admin_custom_provider_preview_blocks_private_and_metadata_hosts():
 
 
 def test_admin_custom_provider_preview_rejects_unknown_transform():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.post(
         "/api/admin/custom-providers/preview",
@@ -1138,7 +1458,7 @@ def test_admin_custom_provider_preview_rejects_unknown_transform():
 
 
 def test_admin_custom_provider_preview_requires_valid_ip():
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.post(
         "/api/admin/custom-providers/preview",
@@ -1154,7 +1474,7 @@ def test_admin_custom_provider_preview_requires_valid_ip():
 def test_admin_custom_provider_api_persists_metadata_and_merges_provider_list(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     payload = {
         "id": "example-provider",
         "name": "Example Provider",
@@ -1185,7 +1505,7 @@ def test_admin_custom_provider_api_persists_metadata_and_merges_provider_list(tm
 def test_admin_custom_provider_delete_removes_metadata(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post(
         "/api/admin/custom-providers",
         json={"id": "delete-me", "name": "Delete Me", "endpoint": "https://api.example.com/{ip}", "provides": []},
@@ -1200,7 +1520,7 @@ def test_admin_custom_provider_delete_removes_metadata(tmp_path, monkeypatch):
 
 def test_admin_custom_provider_api_rejects_builtin_conflict(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.post(
         "/api/admin/custom-providers",
@@ -1213,7 +1533,7 @@ def test_admin_custom_provider_api_rejects_builtin_conflict(tmp_path, monkeypatc
 def test_admin_custom_field_api_persists_metadata_and_merges_field_list(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     payload = {
         "field": "fraud_score",
         "label": "欺诈评分",
@@ -1239,7 +1559,7 @@ def test_admin_custom_field_api_persists_metadata_and_merges_field_list(tmp_path
 def test_admin_custom_field_delete_removes_metadata(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post("/api/admin/custom-fields", json={"field": "delete_field", "label": "Delete field", "type": "string"})
 
     response = client.delete("/api/admin/custom-fields/delete_field")
@@ -1251,7 +1571,7 @@ def test_admin_custom_field_delete_removes_metadata(tmp_path, monkeypatch):
 
 def test_admin_custom_field_api_rejects_builtin_conflict(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.post("/api/admin/custom-fields", json={"field": "network_type", "label": "Conflict", "type": "string"})
 
@@ -1261,7 +1581,7 @@ def test_admin_custom_field_api_rejects_builtin_conflict(tmp_path, monkeypatch):
 def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.get("/api/admin/provider-config")
 
@@ -1285,7 +1605,7 @@ def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path
 def test_admin_provider_config_api_persists_safe_overrides(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     payload = {
         "providers": [
             {"id": "ipapi.is", "enabled": True, "order": 2, "timeout_seconds": 3.5},
@@ -1318,7 +1638,7 @@ def test_admin_provider_config_api_persists_safe_overrides(tmp_path, monkeypatch
 
 def test_admin_provider_config_api_rejects_unknown_provider(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.put(
         "/api/admin/provider-config",
@@ -1330,7 +1650,7 @@ def test_admin_provider_config_api_rejects_unknown_provider(tmp_path, monkeypatc
 
 def test_admin_provider_config_api_rejects_strict_preview_without_public_custom_enabled(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.put(
         "/api/admin/provider-config",
@@ -1344,7 +1664,7 @@ def test_admin_provider_config_api_rejects_strict_preview_without_public_custom_
 def test_admin_config_status_reports_default_public_lookup_mode(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.get("/api/admin/config-status")
 
@@ -1363,7 +1683,7 @@ def test_admin_config_status_reports_default_public_lookup_mode(tmp_path, monkey
 def test_admin_config_status_reports_admin_config_public_lookup_mode(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put("/api/admin/provider-config", json={"providers": [{"id": "ip-api.com", "enabled": True, "order": 1}]})
 
     response = client.get("/api/admin/config-status")
@@ -1382,7 +1702,7 @@ def test_admin_config_status_reports_admin_config_public_lookup_mode(tmp_path, m
 def test_admin_config_status_warns_when_public_custom_providers_enabled(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={"providers": [{"id": "ip-api.com", "enabled": True, "order": 1}], "public_custom_providers_enabled": True},
@@ -1401,7 +1721,7 @@ def test_admin_config_status_warns_when_public_custom_providers_enabled(tmp_path
 def test_admin_config_status_warns_about_enabled_unverified_public_custom_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.post(
         "/api/admin/custom-providers",
         json={
@@ -1432,7 +1752,7 @@ def test_admin_config_status_warns_about_enabled_unverified_public_custom_provid
 def test_admin_config_status_warns_about_enabled_failed_public_custom_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
     client.put(
         "/api/admin/provider-config",
         json={
@@ -1469,7 +1789,7 @@ def test_admin_provider_config_reset_removes_saved_file(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     config_path.write_text('{"version": 1, "providers": []}', encoding="utf-8")
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = TestClient(app)
+    client = admin_client()
 
     response = client.post("/api/admin/provider-config/reset")
 

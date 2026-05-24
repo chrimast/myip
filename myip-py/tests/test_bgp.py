@@ -2,6 +2,44 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.config import get_settings
+
+
+class AdminAuthSettings:
+    ipapi_is_key = ""
+    ipapi_org_key = ""
+    ipinfo_token = ""
+    ipdata_key = ""
+    myip_debug = False
+    myip_cache_ttl_seconds = 120
+    myip_rate_limit_per_minute = 60
+    myip_provider_timeout_seconds = 8.0
+    myip_doh_timeout_seconds = 5.0
+    myip_doh_providers = "cloudflare,google,quad9"
+    myip_admin_username = "admin"
+    myip_admin_password = "admin"
+    myip_admin_session_secret = "test-session-secret"
+
+    def key_status(self):
+        return {
+            "ipapi_is_key": {"configured": False, "source": "missing"},
+            "ipapi_org_key": {"configured": False, "source": "missing"},
+            "ipinfo_token": {"configured": False, "source": "missing"},
+            "ipdata_key": {"configured": False, "source": "missing"},
+        }
+
+    def public_config(self):
+        return {}
+
+    def doh_provider_names(self):
+        return ["cloudflare", "google", "quad9"]
+
+
+def admin_client() -> TestClient:
+    app.dependency_overrides[get_settings] = lambda: AdminAuthSettings()
+    client = TestClient(app)
+    assert client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False).status_code == 303
+    return client
 
 
 def test_merge_upstream_observations_marks_shared_asns_stable_and_single_source_observed():
@@ -686,7 +724,7 @@ def test_bgp_endpoint_uses_runtime_settings_for_limit_cache_and_rate_limit(tmp_p
 
     monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
     monkeypatch.setattr(bgp_module.time, "monotonic", lambda: now["value"])
-    client = TestClient(app)
+    client = admin_client()
 
     saved = client.put(
         "/api/admin/runtime-settings",
@@ -724,7 +762,7 @@ def test_bgp_runtime_cache_can_be_disabled(tmp_path, monkeypatch):
         return bgp_module.BGPTopology(asn=asn, name=f"GOOGLE-{len(calls)}")
 
     monkeypatch.setattr(bgp_module, "fetch_bgp_topology", fake_fetch_topology)
-    client = TestClient(app)
+    client = admin_client()
     saved = client.put(
         "/api/admin/runtime-settings",
         json={"cache": {"bgp_enabled": False}, "bgp": {"default_upstream_limit": 1, "max_upstream_limit": 5}},

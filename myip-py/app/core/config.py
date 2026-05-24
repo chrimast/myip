@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     myip_provider_timeout_seconds: float = 8.0
     myip_doh_timeout_seconds: float = 5.0
     myip_doh_providers: str = "cloudflare,google,quad9"
+    myip_admin_username: str = "admin"
+    myip_admin_password: str = "admin"
+    myip_admin_session_secret: str = "change-me"
 
     model_config = SettingsConfigDict(
         env_file=".env",

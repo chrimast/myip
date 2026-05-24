@@ -51,7 +51,7 @@ def _run_custom_provider_request(ip: str, provider: dict[str, Any]) -> dict[str,
     url = _safe_preview_url(provider["endpoint"], ip)
     try:
         with httpx.Client(timeout=provider.get("timeout_seconds") or 8.0, follow_redirects=False) as client:
-            response = client.get(url)
+            response = client.get(url, headers=_auth_headers(provider))
             response.raise_for_status()
             raw = response.json()
     except httpx.HTTPError as exc:
@@ -69,6 +69,20 @@ def _run_custom_provider_request(ip: str, provider: dict[str, Any]) -> dict[str,
         "raw": raw,
     }
 
+
+
+def _auth_headers(provider: dict[str, Any]) -> dict[str, str]:
+    auth = provider.get("auth") or {}
+    if not isinstance(auth, dict):
+        return {}
+    auth_type = auth.get("type")
+    name = auth.get("name")
+    value = auth.get("value")
+    if auth_type == "bearer_token" and value:
+        return {str(name or "Authorization"): f"Bearer {value}"}
+    if auth_type == "api_key" and name and value:
+        return {str(name): str(value)}
+    return {}
 
 def extract_mapped_fields(
     raw: dict[str, Any],
