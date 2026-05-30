@@ -2,7 +2,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.responses import Response
 
 from app.api.admin import router as admin_router
@@ -30,6 +30,15 @@ ADMIN_HTML = STATIC_DIR / "admin.html"
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     return INDEX_HTML.read_text(encoding="utf-8")
+
+
+@app.get("/static/{asset_path:path}")
+def static_asset(asset_path: str) -> Response:
+    target = (STATIC_DIR / asset_path).resolve()
+    static_root = STATIC_DIR.resolve()
+    if not target.is_file() or static_root not in target.parents:
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    return FileResponse(target)
 
 
 @app.get("/admin", response_class=HTMLResponse)

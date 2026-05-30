@@ -334,6 +334,21 @@ def test_admin_page_serves_provider_management_shell():
     assert "/api/admin/provider-config/import" in body
     assert "API Key 指引" in body
     assert "data-api-key-guidance" in body
+    assert "data-admin-shell" in body
+    assert "admin-shell" in body
+    assert "console-hero" in body
+    assert "section-shell" in body
+    assert "section-heading" in body
+    assert "section-eyebrow" in body
+    assert "section-lead" in body
+    assert "category-overview" in body
+    assert "category-mapping" in body
+    assert "category-provider" in body
+    assert "category-debug" in body
+    assert "功能分区" in body
+    assert "状态总览" in body
+    assert "映射工作台" in body
+    assert "调用链排查" in body
 
 
 def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():

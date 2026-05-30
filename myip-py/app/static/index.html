@@ -10,6 +10,8 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js">
 
 </script>
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <script src="/static/vendor/leaflet/leaflet.js"></script>
 
   <style>
     body{
@@ -306,11 +308,12 @@
       </div>
 
       <div class="mt-4 overflow-hidden rounded-xl border border-gray-100">
-        <iframe id="mapFrame"
-                width="100%" height="260" style="border:0"
-                loading="lazy"
-                referrerpolicy="no-referrer-when-downgrade"
-                src="about:blank"></iframe>
+        <div id="mapFrame"
+             class="relative w-full bg-gray-100"
+             style="height:260px"
+             role="img"
+             aria-label="IP 坐标地图"
+             data-map-provider="amap-leaflet"></div>
       </div>
     </div>
 
@@ -403,6 +406,8 @@ const els = {
     let bgpRenderTimer = null;
     let bgpFinalizeTimer = null;
     let bgpDomTimer = null; // guards updateBGP setTimeout to avoid stale renders
+    let leafletMap = null;
+    let leafletMarker = null;
     const renderState = {
       text: new Map(),
       html: new Map(),
@@ -775,6 +780,54 @@ renderState.text.set("__riskUIKey", __riskKey);
       els.scoreBadge.textContent = `${score}% ${riskLabel(score)}`;
     }
 
+    function amapTileUrl(){
+      return 'https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}';
+    }
+
+    function initLeafletMap(lat, lon){
+      if(!els.mapFrame || typeof L === 'undefined') return false;
+      if(!leafletMap){
+        leafletMap = L.map(els.mapFrame, {
+          zoomControl: true,
+          attributionControl: false,
+          scrollWheelZoom: true,
+          dragging: true,
+          doubleClickZoom: true,
+          touchZoom: true
+        }).setView([lat, lon], 5);
+        L.tileLayer(amapTileUrl(), {
+          minZoom: 2,
+          maxZoom: 18,
+          tileSize: 256
+        }).addTo(leafletMap);
+        leafletMarker = L.marker([lat, lon]).addTo(leafletMap);
+        const credit = L.control({ position: 'bottomleft' });
+        credit.onAdd = function(){
+          const div = L.DomUtil.create('div', 'text-xs text-gray-500');
+          div.style.background = 'rgba(255,255,255,.88)';
+          div.style.borderRadius = '999px';
+          div.style.padding = '2px 8px';
+          div.textContent = '高德地图瓦片';
+          return div;
+        };
+        credit.addTo(leafletMap);
+      }
+      return true;
+    }
+
+    function updateLeafletMap(lat, lon){
+      if(!initLeafletMap(lat, lon)) return false;
+      const next = [lat, lon];
+      leafletMap.setView(next, leafletMap.getZoom() || 5, { animate: false });
+      if(leafletMarker){
+        leafletMarker.setLatLng(next);
+      }else{
+        leafletMarker = L.marker(next).addTo(leafletMap);
+      }
+      setTimeout(() => leafletMap && leafletMap.invalidateSize(), 0);
+      return true;
+    }
+
     function updateMapUI(latRaw, lonRaw){
       const lat = Number(latRaw);
       const lon = Number(lonRaw);
@@ -783,30 +836,16 @@ renderState.text.set("__riskUIKey", __riskKey);
       els.lonVal.textContent = Number.isFinite(lon) ? lon.toFixed(3) : '-';
 
       if(Number.isFinite(lat) && Number.isFinite(lon)){
-        // 350KM view (approx): reduce zoom / tiles for faster loading.
-        const radiusKm = 350;
-
-        // 1 degree latitude ~= 111 km
-        const latDelta = radiusKm / 111.0;
-
-        // 1 degree longitude ~= 111*cos(lat) km; protect high latitudes
-        const latRad = lat * Math.PI / 180.0;
-        const cosLat = Math.max(0.25, Math.cos(latRad)); // avoid huge bbox near poles
-        const lonDelta = radiusKm / (111.0 * cosLat);
-
-        const left = lon - lonDelta;
-        const right = lon + lonDelta;
-        const bottom = lat - latDelta;
-        const top = lat + latDelta;
-
-        const bboxRaw = `${left},${bottom},${right},${top}`;
-        const markerRaw = `${lat},${lon}`;
-        const bbox = encodeURIComponent(bboxRaw);
-        const marker = encodeURIComponent(markerRaw);
-        const nextSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`;
-      if(renderState.lastMapSrc !== nextSrc){ renderState.lastMapSrc = nextSrc; els.mapFrame.src = nextSrc; }
+        const nextSrc = `amap-leaflet:${lat.toFixed(5)},${lon.toFixed(5)}`;
+        if(renderState.lastMapSrc !== nextSrc){
+          renderState.lastMapSrc = nextSrc;
+          updateLeafletMap(lat, lon);
+        }
       }else{
-        if(renderState.lastMapSrc !== "about:blank"){ renderState.lastMapSrc = "about:blank"; els.mapFrame.src = "about:blank"; }
+        if(renderState.lastMapSrc !== "about:blank"){
+          renderState.lastMapSrc = "about:blank";
+          els.mapFrame.innerHTML = '<div class="flex items-center justify-center h-full text-sm text-gray-400">暂无坐标</div>';
+        }
       }
     }
 

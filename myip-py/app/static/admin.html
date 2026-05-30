@@ -9,6 +9,10 @@
     * { box-sizing:border-box; }
     body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(180deg,#eff6ff 0,#f8fafc 300px); color:var(--text); }
     header { padding:30px 24px 22px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.9); box-shadow:0 10px 30px rgba(15,23,42,.06); }
+    .admin-shell { min-height:100vh; }
+    .console-hero { position:relative; overflow:hidden; background:radial-gradient(circle at top left,#dbeafe 0,transparent 34%),rgba(255,255,255,.94); }
+    .console-hero::after { content:""; position:absolute; right:28px; top:22px; width:160px; height:160px; border-radius:999px; background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(14,165,233,.08)); pointer-events:none; }
+    .hero-inner { max-width:1220px; margin:0 auto; position:relative; z-index:1; }
     h1 { margin:0 0 8px; font-size:32px; }
     h2 { margin:0 0 14px; font-size:20px; }
     h3 { margin:0 0 10px; font-size:16px; color:#1e293b; }
@@ -18,8 +22,19 @@
     nav a, .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px; background:var(--accent-soft); color:#1d4ed8; text-decoration:none; margin:2px 4px 2px 0; }
     .page-card-nav { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:18px; }
     .page-card-nav a { display:block; padding:14px; border:1px solid var(--line); border-radius:16px; background:#ffffff; color:var(--text); text-decoration:none; box-shadow:0 10px 24px rgba(15,23,42,.06); }
+    .page-card-nav a:hover { border-color:#93c5fd; transform:translateY(-1px); transition:.16s ease; }
     .page-card-nav strong { display:block; color:#1d4ed8; margin-bottom:4px; }
     section { margin-bottom:24px; scroll-margin-top:18px; }
+    .section-shell { border-radius:24px; padding:20px; border:1px solid var(--line); background:rgba(255,255,255,.72); box-shadow:0 18px 44px rgba(15,23,42,.07); }
+    .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+    .section-heading h2 { margin-bottom:6px; }
+    .section-eyebrow { margin:0 0 6px; color:#2563eb; font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .section-lead { margin:0; color:#475569; }
+    .category-overview { border-top:4px solid #2563eb; }
+    .category-mapping { border-top:4px solid #7c3aed; }
+    .category-provider { border-top:4px solid #059669; }
+    .category-debug { border-top:4px solid #f59e0b; }
+    .category-badge { display:inline-flex; align-items:center; padding:7px 10px; border-radius:999px; background:#eff6ff; color:#1d4ed8; font-size:12px; font-weight:800; white-space:nowrap; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
     .two-col { display:grid; grid-template-columns:minmax(320px,1.2fr) minmax(300px,.8fr); gap:16px; }
     .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:0 14px 34px rgba(15,23,42,.08); }
@@ -63,11 +78,14 @@
     .field-group-column { min-width:0; }
     [data-light-admin-theme] { color-scheme: light; }
     @media (max-width:860px) { .two-col { grid-template-columns:1fr; } }
-    @media (max-width:720px) { header { padding:22px 16px 18px; } main { padding:16px; } h1 { font-size:26px; } nav,.page-card-nav { display:grid; grid-template-columns:1fr; } nav a { width:100%; justify-content:center; } .grid,.two-col,.runtime-settings-grid,.subpanel-grid,.field-groups-grid { grid-template-columns:1fr; } .provider-config-row { display:block; } .provider-config-mobile-row { grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr); gap:8px; } .provider-config-mobile-controls { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .provider-config-control { min-width:0; } .provider-config-control-input { width:100%; min-width:0; } .card { padding:14px; border-radius:14px; } input, select, textarea, button { width:100%; margin-right:0; } input[type="checkbox"] { width:auto; } .pill { width:auto; } .action-row { display:grid; grid-template-columns:1fr; } table, thead, tbody, tr, th, td { display:block; width:100%; } th { display:none; } td { border-bottom:0; padding:6px 0; } tr { border-bottom:1px solid var(--line); padding:10px 0; } }
+    @media (max-width:720px) { header { padding:22px 16px 18px; } main { padding:16px; } h1 { font-size:26px; } nav,.page-card-nav { display:grid; grid-template-columns:1fr; } nav a { width:100%; justify-content:center; } .section-shell { padding:14px; border-radius:18px; } .section-heading { display:block; } .category-badge { margin-top:8px; } .grid,.two-col,.runtime-settings-grid,.subpanel-grid,.field-groups-grid { grid-template-columns:1fr; } .provider-config-row { display:block; } .provider-config-mobile-row { grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr); gap:8px; } .provider-config-mobile-controls { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .provider-config-control { min-width:0; } .provider-config-control-input { width:100%; min-width:0; } .card { padding:14px; border-radius:14px; } input, select, textarea, button { width:100%; margin-right:0; } input[type="checkbox"] { width:auto; } .pill { width:auto; } .action-row { display:grid; grid-template-columns:1fr; } table, thead, tbody, tr, th, td { display:block; width:100%; } th { display:none; } td { border-bottom:0; padding:6px 0; } tr { border-bottom:1px solid var(--line); padding:10px 0; } }
   </style>
 </head>
-<body data-light-admin-theme data-mobile-layout>
-  <header>
+<body data-light-admin-theme data-mobile-layout data-admin-shell>
+  <div class="admin-shell">
+  <header class="console-hero">
+    <div class="hero-inner">
+    <p class="section-eyebrow">功能分区 · myip-py</p>
     <h1>Provider 管理控制台</h1>
     <p>面向日常管理重新整理：把原来一个长 /admin 页面拆成独立功能页面卡片；先看网站概览，再按新增数据源、测试映射、启用 Provider 的顺序操作；后台 debug 默认收起。</p>
     <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code> · <code>/api/admin/config-status</code></p>
@@ -77,6 +95,7 @@
       <a href="#provider-management" data-page-card="provider-management"><strong>3. Provider 管理</strong><span>启用 Provider、调整顺序与超时，并保存同一份配置 JSON。</span></a>
       <a href="#lookup-debug">高级调试</a>
     </nav>
+    </div>
   </header>
   <main>
     <div id="error" class="error"></div>
@@ -86,9 +105,15 @@
       <div id="admin-feedback" class="card feedback" role="status">还没有操作。保存、测试、删除或重置后会在这里显示结果。</div>
     </section>
 
-    <section id="site-overview" data-site-overview>
-      <h2>1. 网站概览</h2>
-      <p class="small">总览与公开接口控制已合并；运行设置已并入网站概览：这里直接显示网站运行配置、公开接口模式、保存配置状态、验证风险和运行开关。</p>
+    <section id="site-overview" data-site-overview class="section-shell category-overview">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">状态总览</p>
+          <h2>1. 网站概览</h2>
+          <p class="section-lead small">总览与公开接口控制已合并；运行设置已并入网站概览：这里直接显示网站运行配置、公开接口模式、保存配置状态、验证风险和运行开关。</p>
+        </div>
+        <span class="category-badge">公开接口 / 运行设置</span>
+      </div>
       <div class="grid">
         <div id="status-summary" class="card hero-card" data-overview-status-card>加载中</div>
         <div id="config-status" class="card" data-public-control-card>加载中</div>
@@ -106,9 +131,15 @@
       </section>
     </section>
 
-    <section id="mapping-workspace" data-mapping-workspace>
-      <h2>2. 字段与数据源映射</h2>
-      <p class="small">统一管理固定字段从哪些 Provider 的哪些原始字段取值；新增自定义 Provider 后，也在这里把测试结果映射到固定字段。</p>
+    <section id="mapping-workspace" data-mapping-workspace class="section-shell category-mapping">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">映射工作台</p>
+          <h2>2. 字段与数据源映射</h2>
+          <p class="section-lead small">统一管理固定字段从哪些 Provider 的哪些原始字段取值；新增自定义 Provider 后，也在这里把测试结果映射到固定字段。</p>
+        </div>
+        <span class="category-badge">新增数据源 / 字段映射</span>
+      </div>
       <div data-field-view data-field-catalog>
         <h3>字段视图</h3>
         <div class="card" data-mapping-issues>
@@ -157,8 +188,15 @@
       </div>
     </section>
 
-    <section id="provider-management">
-      <h2>3. Provider 管理</h2>
+    <section id="provider-management" class="section-shell category-provider">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">Provider 编排</p>
+          <h2>3. Provider 管理</h2>
+          <p class="section-lead small">集中查看 Provider 总览，并在同一张卡片里调整启用状态、顺序、超时、公开控制和保存配置。</p>
+        </div>
+        <span class="category-badge">Provider 总览 / 保存控制</span>
+      </div>
       <div class="provider-management-stack">
       <div data-provider-view>
         <h3>Provider 总览</h3>
@@ -183,8 +221,15 @@
       </div>
     </section>
 
-    <section id="lookup-debug">
-      <h2>高级调试</h2>
+    <section id="lookup-debug" class="section-shell category-debug">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">调用链排查</p>
+          <h2>高级调试</h2>
+          <p class="section-lead small">查询 IP、域名或 URL 时默认显示关键结论，底层 Provider 调用链和原始 JSON 继续收起。</p>
+        </div>
+        <span class="category-badge">Debug 默认收起</span>
+      </div>
       <div class="card">
         <p>输入 IP、域名或 URL，默认只显示关键结论；Provider 调用链、字段来源、禁用字段和原始 JSON 已收起到高级调试中。</p>
         <form id="lookup-form"><input id="lookup-target" name="target" value="8.8.8.8" autocomplete="off" placeholder="8.8.8.8 或 example.com"><button type="submit">查询</button></form>
@@ -249,5 +294,6 @@
     async function boot() { const [settings, providers, fields, status, runtime] = await Promise.all([loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields), loadJson(endpoints.configStatus), loadJson(endpoints.runtimeSettings)]); renderRuntimeSettings(runtime); renderConfigStatus(status); renderStatusSummary(status, providers); window.adminProviders = providers; window.adminFields = fields; document.getElementById('settings').innerHTML = `<h3>运行配置</h3>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}<h3>Keys</h3>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}`; renderProviders(providers); renderFields(fields); document.querySelectorAll('[data-field-filter]').forEach(el => el.addEventListener('input', () => renderFieldCards(window.adminFields || []))); document.querySelectorAll('[data-field-filter]').forEach(el => el.addEventListener('change', () => renderFieldCards(window.adminFields || []))); document.getElementById('run-provider-health').addEventListener('click', () => runProviderHealth().then(() => showFeedback('Provider 健康检查完成。')).catch(error => showFeedback(`Provider 健康检查失败：${error.message}`, 'error'))); document.getElementById('export-provider-config').addEventListener('click', async () => { const exported = await loadJson(endpoints.providerConfigExport); document.getElementById('provider-config-import-json').value = JSON.stringify(exported.config, null, 2); showFeedback('配置已导出到文本框，敏感值已脱敏。'); }); document.getElementById('import-provider-config').addEventListener('click', async () => { const config = JSON.parse(document.getElementById('provider-config-import-json').value || '{}'); const response = await fetch(endpoints.providerConfigImport, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({config})}); if (!response.ok) throw new Error(`导入配置失败 ${response.status}`); await reloadCatalogs(); await loadProviderConfig(); await refreshConfigStatus(); showFeedback('配置导入完成。'); }); document.getElementById('save-field-mappings').addEventListener('click', async () => { const response = await fetch(endpoints.fieldMappings, {method:'PUT', headers:{'content-type':'application/json'}, body: JSON.stringify(collectFieldMappings())}); if (!response.ok) throw new Error(`保存字段映射失败 ${response.status}`); await reloadCatalogs(); await loadProviderConfig(); showFeedback('字段映射已保存。'); }); document.getElementById('lookup-form').addEventListener('submit', event => { event.preventDefault(); runLookup(document.getElementById('lookup-target').value.trim()).then(() => showFeedback('查询完成。')).catch(error => { document.getElementById('lookup-json').textContent = `查询失败：${error.message}`; showFeedback(`查询失败：${error.message}`, 'error'); }); }); await loadProviderConfig(); await loadAuthConfig(); document.getElementById('save-admin-auth').addEventListener('click', () => saveAuthConfig().catch(error => showFeedback(`后台账号更新失败：${error.message}`, 'error'))); document.getElementById('save-provider-config').addEventListener('click', async () => { const response = await fetch(endpoints.providerConfig, {method:'PUT', headers:{'content-type':'application/json'}, body: JSON.stringify(collectProviderConfig())}); if (!response.ok) throw new Error(`保存配置失败 ${response.status}`); const config = await response.json(); renderProviderConfig(config); renderRuntimeSettings(config.runtime_settings || runtime); await reloadCatalogs(); await refreshConfigStatus(); showFeedback('Provider 配置和运行设置已保存。'); }); document.getElementById('reset-provider-config').addEventListener('click', async event => { const message = event.currentTarget.dataset.confirmReset || '确定重置配置？'; if (!window.confirm(message)) { showFeedback('已取消重置。'); return; } const response = await fetch(`${endpoints.providerConfig}/reset`, {method:'POST'}); if (!response.ok) throw new Error(`重置失败 ${response.status}`); const config = await response.json(); renderProviderConfig(config); if (config.runtime_settings) renderRuntimeSettings(config.runtime_settings); await reloadCatalogs(); await refreshConfigStatus(); showFeedback('已恢复默认生产链。'); }); document.getElementById('custom-provider-form').addEventListener('submit', async event => { event.preventDefault(); const payload = collectCustomProviderForm(); const response = await fetch(endpoints.customProviders, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)}); if (!response.ok) throw new Error(`新增 Provider 失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); showFeedback(`自定义 Provider ${payload.id} 已保存。`); }); document.getElementById('custom-provider-preview-form').addEventListener('submit', async event => { event.preventDefault(); const providerId = document.getElementById('custom-provider-preview-id').value.trim(); const payload = providerId ? { provider_id: providerId } : { provider: collectCustomProviderForm() }; payload.ip = document.getElementById('custom-provider-preview-ip').value.trim(); if (providerId && document.querySelector('[data-apply-preview-mapping]')?.checked) payload.apply_field_mappings = true; try { const response = await fetch(endpoints.customProviderPreview, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)}); const data = await response.json(); document.getElementById('custom-provider-preview-json').textContent = JSON.stringify(data, null, 2); if (!response.ok) throw new Error(data.detail || `预览失败 ${response.status}`); await loadProviderConfig(); await reloadCatalogs(); showFeedback(data.applied_field_mappings ? '预览成功，字段映射已生成。' : '预览成功。'); } catch (error) { await loadProviderConfig(); document.getElementById('custom-provider-preview-json').textContent = `预览失败：${error.message}`; showFeedback(`预览失败：${error.message}`, 'error'); } }); document.getElementById('custom-field-form').addEventListener('submit', async event => { event.preventDefault(); const payload = {field: document.getElementById('custom-field-name').value.trim(), label: document.getElementById('custom-field-label').value.trim(), type: document.getElementById('custom-field-type').value.trim() || 'string'}; const response = await fetch(endpoints.customFields, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)}); if (!response.ok) throw new Error(`新增字段失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); showFeedback(`自定义字段 ${payload.field} 已保存。`); }); document.addEventListener('click', async event => { const providerId = event.target.dataset?.deleteCustomProvider; const fieldName = event.target.dataset?.deleteCustomField; if (providerId) { const response = await fetch(`${endpoints.customProviders}/${encodeURIComponent(providerId)}`, {method:'DELETE'}); if (!response.ok) throw new Error(`删除 Provider 失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); showFeedback(`已删除自定义 Provider ${providerId}。`); } if (fieldName) { const response = await fetch(`${endpoints.customFields}/${encodeURIComponent(fieldName)}`, {method:'DELETE'}); if (!response.ok) throw new Error(`删除字段失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); showFeedback(`已删除自定义字段 ${fieldName}。`); } }); document.querySelector('[data-clear-custom-provider-form]').addEventListener('click', () => { clearCustomProviderForm(); showFeedback('自定义 Provider 表单已清空。'); }); document.querySelector('[data-clear-custom-field-form]').addEventListener('click', () => { clearCustomFieldForm(); showFeedback('自定义字段表单已清空。'); }); }
     boot().catch(error => { const node = document.getElementById('error'); node.style.display = 'block'; node.textContent = `后台数据加载失败：${error.message}`; });
   </script>
+  </div>
 </body>
 </html>
