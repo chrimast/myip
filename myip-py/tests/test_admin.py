@@ -176,8 +176,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-nav-mobile-compact" in body
     assert "grid-template-columns:repeat(6,minmax(0,1fr))" in body
     assert "white-space:nowrap" in body
-    assert "min-width:92px" in body
-    assert "min-width:118px" not in body
+    assert "nav:not(.floating-settings-nav)" in body
+    assert "nav { display:grid; grid-template-columns:1fr; }" not in body
+    assert ".floating-settings-nav { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); top:0" in body
+    assert ".floating-settings-nav p { display:none; }" in body
+    assert ".floating-settings-nav a { width:auto; min-width:0" in body
     assert "min-width:150px" not in body
     assert "min-width:170px" not in body
     assert "data-nav-category=\"overview\"" in body
