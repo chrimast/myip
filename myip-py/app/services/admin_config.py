@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import secrets
@@ -15,6 +16,13 @@ from app.services.ip_lookup import FIELD_PRIORITY_GROUPS, PROVIDER_FIELD_PRIORIT
 PROVIDER_CONFIG_PATH = Path("data/admin_provider_config.json")
 CONFIG_VERSION = 1
 AUTH_HASH_ALGORITHM = "pbkdf2_sha256"
+BUILTIN_API_KEYS = {
+    "ipapi_is_key": "ipapi_is_key",
+    "ipapi_org_key": "ipapi_org_key",
+    "ipinfo_token": "ipinfo_token",
+    "ipdata_key": "ipdata_key",
+}
+SECRET_PREFIX = "encoded:"
 
 PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -417,7 +425,54 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
 
 
 def admin_settings(settings: Settings) -> dict[str, Any]:
-    return {"keys": settings.key_status(), "config": settings.public_config()}
+    return {"keys": builtin_api_key_status(settings), "config": settings.public_config()}
+
+
+def builtin_api_key_values(settings: Settings | None = None) -> dict[str, str]:
+    settings = settings or Settings()
+    admin_keys = read_provider_config(include_secrets=True).get("api_keys", {})
+    return {
+        key: str(_decode_secret(admin_keys.get(key)) or getattr(settings, attr, "") or "")
+        for key, attr in BUILTIN_API_KEYS.items()
+    }
+
+
+def builtin_api_key_status(settings: Settings | None = None) -> dict[str, dict[str, bool | str]]:
+    settings = settings or Settings()
+    admin_keys = read_provider_config(include_secrets=True).get("api_keys", {})
+    status = {}
+    for key, attr in BUILTIN_API_KEYS.items():
+        if admin_keys.get(key):
+            status[key] = {"configured": True, "source": "admin"}
+        else:
+            value = getattr(settings, attr, "")
+            status[key] = {"configured": bool(value), "source": "env" if value else "missing"}
+    return status
+
+
+def save_builtin_api_keys(payload: dict[str, Any], settings: Settings | None = None) -> dict[str, dict[str, bool | str]]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="api keys payload must be an object")
+    config = read_provider_config(include_secrets=True)
+    api_keys = dict(config.get("api_keys", {}))
+    for key, value in payload.items():
+        if key not in BUILTIN_API_KEYS:
+            raise HTTPException(status_code=422, detail=f"unknown api key: {key}")
+        if value is None or str(value).strip() == "":
+            api_keys.pop(key, None)
+        else:
+            api_keys[key] = _encode_secret(str(value).strip())
+    write_provider_config({**_persistable_config(config), "api_keys": api_keys})
+    return builtin_api_key_status(settings)
+
+
+def clear_builtin_api_key(key_name: str) -> None:
+    if key_name not in BUILTIN_API_KEYS:
+        raise HTTPException(status_code=422, detail=f"unknown api key: {key_name}")
+    config = read_provider_config(include_secrets=True)
+    api_keys = dict(config.get("api_keys", {}))
+    api_keys.pop(key_name, None)
+    write_provider_config({**_persistable_config(config), "api_keys": api_keys})
 
 
 def admin_providers(settings: Settings) -> list[dict[str, Any]]:
@@ -535,6 +590,11 @@ def _read_provider_config() -> dict[str, Any]:
 def _redact_provider_config(config: dict[str, Any]) -> dict[str, Any]:
     redacted = dict(config)
     redacted["custom_providers"] = [_redact_custom_provider(provider) for provider in config.get("custom_providers", [])]
+    redacted["api_keys"] = {
+        key: {"configured": bool(value), "source": "admin"}
+        for key, value in config.get("api_keys", {}).items()
+        if key in BUILTIN_API_KEYS
+    }
     return redacted
 
 
@@ -636,6 +696,9 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         "public_custom_providers_enabled": bool(payload.get("public_custom_providers_enabled", False)),
         "require_custom_provider_preview_ok": bool(payload.get("require_custom_provider_preview_ok", False)),
     }
+    api_keys = _normalize_builtin_api_keys(payload.get("api_keys", {}))
+    if api_keys:
+        normalized["api_keys"] = api_keys
     if "admin_auth" in payload:
         normalized["admin_auth"] = _normalize_admin_auth(payload["admin_auth"])
     return normalized
@@ -743,6 +806,7 @@ def custom_provider_by_id(provider_id: str, *, include_secrets: bool = False) ->
 
 def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
     persisted = {
+        "version": config["version"],
         "providers": config["providers"],
         "field_overrides": config["field_overrides"],
         "field_mappings": config.get("field_mappings", {}),
@@ -752,6 +816,8 @@ def _persistable_config(config: dict[str, Any]) -> dict[str, Any]:
         "public_custom_providers_enabled": config.get("public_custom_providers_enabled", False),
         "require_custom_provider_preview_ok": config.get("require_custom_provider_preview_ok", False),
     }
+    if config.get("api_keys"):
+        persisted["api_keys"] = config["api_keys"]
     if "admin_auth" in config:
         persisted["admin_auth"] = config["admin_auth"]
     return persisted
@@ -820,6 +886,64 @@ def save_runtime_settings(payload: dict[str, Any]) -> dict[str, Any]:
     runtime_settings = _normalize_runtime_settings(payload)
     write_provider_config({**_persistable_config(config), "runtime_settings": runtime_settings})
     return runtime_settings
+
+
+def runtime_status() -> dict[str, Any]:
+    effective = read_provider_config()["runtime_settings"]
+    cache = effective.get("cache", {})
+    rate_limit = effective.get("rate_limit", {})
+    dns = effective.get("dns", {})
+    bgp = effective.get("bgp", {})
+    return {
+        "effective": effective,
+        "modules": {
+            "ip_lookup": {
+                "cache": "enabled" if cache.get("ip_enabled", True) else "disabled",
+                "cache_ttl_seconds": cache.get("ip_ttl_seconds"),
+                "rate_limit": "enabled" if rate_limit.get("ip_enabled", True) else "disabled",
+                "rate_limit_per_minute": rate_limit.get("ip_per_minute"),
+            },
+            "bgp": {
+                "enabled": bool(bgp.get("enabled", True)),
+                "cache": "enabled" if cache.get("bgp_enabled", True) else "disabled",
+                "default_upstream_limit": bgp.get("default_upstream_limit"),
+                "max_upstream_limit": bgp.get("max_upstream_limit"),
+            },
+            "dns": {
+                "doh": "enabled" if dns.get("doh_enabled", True) else "disabled",
+                "provider_order": list(dns.get("doh_providers", [])),
+                "timeout_seconds": dns.get("timeout_seconds"),
+                "ip_version_preference": dns.get("ip_version_preference"),
+            },
+        },
+        "actions": {"can_clear_cache": True},
+    }
+
+
+def import_preview(config: dict[str, Any]) -> dict[str, Any]:
+    current = read_provider_config()
+    incoming = _normalize_provider_config(config)
+    return {"valid": True, "will_write": False, "diff": _config_diff(current, incoming), "config": _redact_provider_config(incoming)}
+
+
+def _config_diff(current: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "providers": _list_id_diff(current.get("providers", []), incoming.get("providers", []), "id"),
+        "custom_providers": _list_id_diff(current.get("custom_providers", []), incoming.get("custom_providers", []), "id"),
+        "custom_fields": _list_id_diff(current.get("custom_fields", []), incoming.get("custom_fields", []), "field"),
+        "runtime_settings_changed": current.get("runtime_settings") != incoming.get("runtime_settings"),
+        "field_mappings_changed": current.get("field_mappings", {}) != incoming.get("field_mappings", {}),
+    }
+
+
+def _list_id_diff(current_items: list[dict[str, Any]], incoming_items: list[dict[str, Any]], key: str) -> dict[str, list[str]]:
+    current = {item[key]: item for item in current_items if key in item}
+    incoming = {item[key]: item for item in incoming_items if key in item}
+    return {
+        "added": sorted(set(incoming) - set(current)),
+        "removed": sorted(set(current) - set(incoming)),
+        "changed": sorted(item_key for item_key in set(current) & set(incoming) if current[item_key] != incoming[item_key]),
+    }
 
 
 def default_runtime_settings() -> dict[str, Any]:
@@ -966,6 +1090,37 @@ def _normalize_auth(payload: dict[str, Any]) -> dict[str, Any]:
             return {"type": auth_type, "name": name.strip(), "value": None}
         raise HTTPException(status_code=422, detail="auth value is required")
     return {"type": auth_type, "name": name.strip(), "value": value.strip()}
+
+def _encode_secret(value: str) -> str:
+    if value.startswith(SECRET_PREFIX):
+        return value
+    return SECRET_PREFIX + base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def _decode_secret(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    if not value.startswith(SECRET_PREFIX):
+        return value
+    try:
+        return base64.urlsafe_b64decode(value[len(SECRET_PREFIX):].encode("ascii")).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _normalize_builtin_api_keys(value: Any) -> dict[str, str]:
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="api_keys must be an object")
+    normalized = {}
+    for key, secret in value.items():
+        if key not in BUILTIN_API_KEYS:
+            raise HTTPException(status_code=422, detail=f"unknown api key: {key}")
+        if isinstance(secret, str) and secret.strip():
+            normalized[key] = _encode_secret(secret.strip())
+    return normalized
+
 
 def _normalize_field_mappings(value: Any, known_fields: set[str], known_providers: set[str]) -> dict[str, dict[str, Any]]:
     if not isinstance(value, dict):

@@ -368,6 +368,126 @@ def test_admin_settings_api_exposes_safe_runtime_config_without_secret_values():
     assert body["config"]["doh_providers"] == ["cloudflare", "google", "quad9"]
 
 
+def test_admin_builtin_api_keys_can_be_saved_and_used_without_leaking_secret(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+
+    saved = client.put("/api/admin/api-keys", json={"ipinfo_token": "saved-token", "ipdata_key": ""})
+
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["ipinfo_token"] == {"configured": True, "source": "admin"}
+    assert body["ipdata_key"] == {"configured": False, "source": "missing"}
+    assert "saved-token" not in config_path.read_text(encoding="utf-8")
+    assert client.get("/api/admin/settings").json()["keys"]["ipinfo_token"] == {"configured": True, "source": "admin"}
+
+    from app.services.ip_lookup import IPAPIIsLookupProvider
+
+    provider = IPAPIIsLookupProvider()
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get("https://ipinfo.io/8.8.8.8/json").respond(
+            200,
+            json={"ip": "8.8.8.8", "asn": {"asn": "AS15169", "name": "Google LLC"}},
+        )
+        result = provider._lookup_ipinfo("8.8.8.8")
+
+    assert route.called
+    assert route.calls[0].request.url.params["token"] == "saved-token"
+    assert result.provider == "ipinfo.io"
+
+
+def test_admin_runtime_settings_status_reports_live_effect_and_cache_clear(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+    client.put(
+        "/api/admin/runtime-settings",
+        json={"cache": {"ip_enabled": False, "ip_ttl_seconds": 30}, "dns": {"doh_providers": ["quad9"], "timeout_seconds": 2}},
+    )
+
+    response = client.get("/api/admin/runtime-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["effective"]["cache"]["ip_enabled"] is False
+    assert body["effective"]["dns"]["doh_providers"] == ["quad9"]
+    assert body["modules"]["ip_lookup"]["cache"] == "disabled"
+    assert body["modules"]["dns"]["provider_order"] == ["quad9"]
+    assert body["actions"]["can_clear_cache"] is True
+
+    cleared = client.post("/api/admin/runtime/cache/clear")
+    assert cleared.status_code == 200
+    assert cleared.json()["cleared"] == ["ip_lookup", "bgp"]
+
+
+def test_admin_provider_health_includes_latency_checked_at_and_http_status(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+    client.put(
+        "/api/admin/provider-config",
+        json={
+            "providers": [
+                {"id": "ip-api.com", "enabled": True, "order": 1, "timeout_seconds": 1.0},
+                {"id": "ipapi.is", "enabled": False, "order": 2},
+                {"id": "ipwho.is", "enabled": False, "order": 3},
+                {"id": "ipapi.org", "enabled": False, "order": 4},
+                {"id": "ipinfo.io", "enabled": False, "order": 5},
+                {"id": "ipdata.co", "enabled": False, "order": 6},
+            ]
+        },
+    )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.get("http://ip-api.com/json/8.8.8.8").respond(200, json={"status": "success", "query": "8.8.8.8", "country": "United States"})
+        response = client.get("/api/admin/provider-health?ip=8.8.8.8")
+
+    assert response.status_code == 200
+    item = next(item for item in response.json()["providers"] if item["id"] == "ip-api.com")
+    assert item["checked_at"].startswith("20")
+    assert item["latency_ms"] >= 0
+    assert item["http_status"] == 200
+    assert item["last_success"] is True
+
+
+def test_admin_provider_config_import_preview_reports_diff_without_writing(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+
+    response = client.post(
+        "/api/admin/provider-config/import/preview",
+        json={"config": {"providers": [{"id": "ipwho.is", "enabled": False, "order": 1}]}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is True
+    assert body["diff"]["providers"]["changed"] == ["ipwho.is"]
+    assert body["will_write"] is False
+    assert config_path.exists() is False
+
+
+def test_admin_page_exposes_enhanced_admin_tools_and_e2e_hooks():
+    body = admin_client().get("/admin").text
+
+    assert "data-admin-api-key-manager" in body
+    assert "/api/admin/api-keys" in body
+    assert "data-runtime-status-panel" in body
+    assert "/api/admin/runtime-status" in body
+    assert "data-clear-runtime-cache" in body
+    assert "data-health-latency" in body
+    assert "data-health-http-status" in body
+    assert "data-import-preview" in body
+    assert "/api/admin/provider-config/import/preview" in body
+    assert "data-json-tree-picker" in body
+    assert "data-e2e-admin-login" in body
+    assert "data-e2e-save-provider-config" in body
+    assert "data-e2e-save-runtime-settings" in body
+    assert "data-e2e-custom-provider-preview" in body
+
+
 def test_admin_runtime_settings_defaults_and_persistence(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)

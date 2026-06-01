@@ -99,6 +99,9 @@ class IPAPIIsLookupProvider:
 
     def __init__(self) -> None:
         self.settings = get_settings()
+        from app.services.admin_config import builtin_api_key_values
+
+        self.api_keys = builtin_api_key_values(self.settings)
 
     def lookup(self, ip: str) -> IPInfo:
         results: list[IPInfo] = []
@@ -169,7 +172,7 @@ class IPAPIIsLookupProvider:
     def _lookup_ipapi_is(self, ip: str) -> IPInfo:
         data = self._get_json(
             self.endpoint,
-            params=self._params_with_optional_key({"q": ip}, "key", self.settings.ipapi_is_key),
+            params=self._params_with_optional_key({"q": ip}, "key", self.api_keys["ipapi_is_key"]),
         )
         if error := _string(data, "error"):
             raise ValueError(error)
@@ -287,7 +290,7 @@ class IPAPIIsLookupProvider:
     def _lookup_ipapi_org(self, ip: str) -> IPInfo:
         data = self._get_json(
             f"https://ipapi.org/api/ip/{quote(ip, safe='')}",
-            params=self._params_with_optional_key(None, "key", self.settings.ipapi_org_key),
+            params=self._params_with_optional_key(None, "key", self.api_keys["ipapi_org_key"]),
         )
         provider_ip = _matching_ip(data, "ip", ip, "ipapi.org")
         asn = _mapping(data, "asn")
@@ -310,7 +313,7 @@ class IPAPIIsLookupProvider:
     def _lookup_ipinfo(self, ip: str) -> IPInfo:
         data = self._get_json(
             f"https://ipinfo.io/{quote(ip, safe='')}/json",
-            params=self._params_with_optional_key(None, "token", self.settings.ipinfo_token),
+            params=self._params_with_optional_key(None, "token", self.api_keys["ipinfo_token"]),
         )
         if error := _string(data, "error"):
             raise ValueError(error)
@@ -332,7 +335,7 @@ class IPAPIIsLookupProvider:
     def _lookup_ipdata(self, ip: str) -> IPInfo:
         data = self._get_json(
             f"https://api.ipdata.co/{quote(ip, safe='')}",
-            params=self._params_with_optional_key(None, "api-key", self.settings.ipdata_key),
+            params=self._params_with_optional_key(None, "api-key", self.api_keys["ipdata_key"]),
         )
         if _string(data, "message") and not _string(data, "ip"):
             raise ValueError(_string(data, "message"))

@@ -1,4 +1,6 @@
 import ipaddress
+import time
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 
@@ -10,20 +12,27 @@ from app.services.admin_config import (
     admin_fields,
     admin_providers,
     admin_settings,
+    builtin_api_key_status,
+    clear_builtin_api_key,
     custom_provider_by_id,
     delete_custom_field,
     delete_custom_provider,
+    import_preview,
     PROVIDER_DEFINITIONS,
     read_provider_config,
     public_admin_auth_config,
     record_custom_provider_preview,
     save_admin_auth_config,
+    save_builtin_api_keys,
     save_preview_field_mappings,
     reset_provider_config,
     save_field_mappings,
     save_runtime_settings,
+    runtime_status,
     write_provider_config,
 )
+from app.api.bgp import clear_bgp_topology_cache
+from app.api.ip import clear_ip_lookup_cache
 from app.services.custom_provider_preview import GenericJSONLookupProvider, preview_custom_provider
 from app.services.configured_ip_lookup import (
     apply_field_overrides,
@@ -65,6 +74,34 @@ def provider_config() -> dict:
 @router.get("/runtime-settings")
 def runtime_settings() -> dict:
     return read_provider_config()["runtime_settings"]
+
+
+@router.get("/runtime-status")
+def get_runtime_status() -> dict:
+    return runtime_status()
+
+
+@router.post("/runtime/cache/clear")
+def clear_runtime_cache() -> dict:
+    clear_ip_lookup_cache()
+    clear_bgp_topology_cache()
+    return {"cleared": ["ip_lookup", "bgp"]}
+
+
+@router.get("/api-keys")
+def api_keys(settings: Settings = Depends(get_settings)) -> dict:
+    return builtin_api_key_status(settings)
+
+
+@router.put("/api-keys")
+def update_api_keys(payload: dict, settings: Settings = Depends(get_settings)) -> dict:
+    return save_builtin_api_keys(payload, settings)
+
+
+@router.delete("/api-keys/{key_name}")
+def delete_api_key(key_name: str, settings: Settings = Depends(get_settings)) -> dict:
+    clear_builtin_api_key(key_name)
+    return builtin_api_key_status(settings)
 
 
 @router.get("/auth-config")
@@ -141,6 +178,14 @@ def remove_custom_field(field: str) -> dict:
 @router.get("/provider-config/export")
 def export_provider_config() -> dict:
     return {"kind": "myip-py-admin-provider-config", "config": read_provider_config()}
+
+
+@router.post("/provider-config/import/preview")
+def preview_import_provider_config(payload: dict) -> dict:
+    config = payload.get("config") if isinstance(payload, dict) else None
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=422, detail="config must be an object")
+    return import_preview(config)
 
 
 @router.post("/provider-config/import")
@@ -237,12 +282,17 @@ def provider_health(ip: str = Query("8.8.8.8", min_length=1), provider_factory=D
             providers.append(item)
             continue
         try:
+            started = time.perf_counter()
             result = provider_factory(provider["id"], item["timeout_seconds"]).lookup(checked_ip)
+            item["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
+            item["checked_at"] = datetime.now(timezone.utc).isoformat()
             fields = sorted(field for field, value in result.model_dump().items() if value not in (None, "", False, []))
-            item.update({"status": "ok", "fields": fields, "provider": result.provider})
+            item.update({"status": "ok", "fields": fields, "provider": result.provider, "http_status": 200, "last_success": True})
             summary["ok"] += 1
         except Exception as exc:  # health check reports failures instead of failing the whole endpoint
-            item.update({"status": "error", "error": str(exc), "fields": []})
+            item["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
+            item["checked_at"] = datetime.now(timezone.utc).isoformat()
+            item.update({"status": "error", "error": str(exc), "fields": [], "http_status": getattr(getattr(exc, "response", None), "status_code", None), "last_success": False})
             summary["error"] += 1
         providers.append(item)
     return {"checked_ip": checked_ip, "summary": summary, "providers": providers}
