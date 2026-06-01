@@ -159,6 +159,25 @@ def test_admin_page_serves_provider_management_shell():
     assert "3. Provider 管理" in body
     assert "功能页面" in body
     assert "data-page-card-nav" in body
+    assert "data-floating-settings-nav" in body
+    assert "悬浮设置导航" in body
+    assert "sticky" in body
+    assert 'href="#site-overview"' in body
+    assert 'href="#runtime-settings"' in body
+    assert 'href="#mapping-workspace"' in body
+    assert 'href="#new-data-source"' in body
+    assert 'href="#provider-management"' in body
+    assert 'href="#lookup-debug"' in body
+    assert "运行生效" in body
+    assert "数据源与字段" in body
+    assert "移动端会降级为横向滚动导航" in body
+    assert "data-nav-category=\"overview\"" in body
+    assert "data-nav-category=\"runtime\"" in body
+    assert "data-nav-category=\"mapping\"" in body
+    assert "data-nav-category=\"new-source\"" in body
+    assert "data-nav-category=\"provider\"" in body
+    assert "data-nav-category=\"debug\"" in body
+    assert body.index('data-floating-settings-nav') < body.index('id="site-overview"')
     assert "data-page-card=\"site-overview\"" in body
     assert "网站概览" in body
     assert "总览与公开接口控制已合并" in body
