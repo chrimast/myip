@@ -171,6 +171,14 @@ def test_admin_page_serves_provider_management_shell():
     assert "运行生效" in body
     assert "数据源与字段" in body
     assert "移动端会降级为横向滚动导航" in body
+    assert "floating-settings-nav compact" in body
+    assert "data-nav-compact" in body
+    assert "data-nav-mobile-compact" in body
+    assert "grid-template-columns:repeat(6,minmax(0,1fr))" in body
+    assert "white-space:nowrap" in body
+    assert "min-width:118px" in body
+    assert "min-width:150px" not in body
+    assert "min-width:170px" not in body
     assert "data-nav-category=\"overview\"" in body
     assert "data-nav-category=\"runtime\"" in body
     assert "data-nav-category=\"mapping\"" in body
