@@ -20,11 +20,8 @@
     main { max-width:1220px; margin:0 auto; padding:24px; }
     nav { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
     nav a, .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px; background:var(--accent-soft); color:#1d4ed8; text-decoration:none; margin:2px 4px 2px 0; }
-    .page-card-nav { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:18px; }
-    .page-card-nav a { display:block; padding:14px; border:1px solid var(--line); border-radius:16px; background:#ffffff; color:var(--text); text-decoration:none; box-shadow:0 10px 24px rgba(15,23,42,.06); }
-    .page-card-nav a:hover, .floating-settings-nav a:hover { border-color:#93c5fd; transition:.16s ease; }
-    .page-card-nav a:hover { transform:translateY(-1px); }
-    .page-card-nav strong, .floating-settings-nav strong { display:block; color:#1d4ed8; margin-bottom:4px; }
+    .floating-settings-nav a:hover { border-color:#93c5fd; transition:.16s ease; }
+    .floating-settings-nav strong { display:block; color:#1d4ed8; margin-bottom:4px; }
     .floating-settings-nav { position:sticky; top:8px; z-index:20; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:6px; margin:0 0 12px; padding:6px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.96); box-shadow:0 10px 24px rgba(15,23,42,.08); backdrop-filter:blur(12px); }
     .floating-settings-nav p { grid-column:1/-1; margin:0 0 2px; color:var(--muted); line-height:1.2; }
     .floating-settings-nav a { display:block; padding:7px 8px; border:1px solid var(--line); border-radius:10px; background:#ffffff; color:var(--text); text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -85,7 +82,7 @@
     .field-group-column { min-width:0; }
     [data-light-admin-theme] { color-scheme: light; }
     @media (max-width:860px) { .two-col { grid-template-columns:1fr; } }
-    @media (max-width:720px) { header { padding:22px 16px 18px; } main { padding:16px; } h1 { font-size:26px; } nav,.page-card-nav { display:grid; grid-template-columns:1fr; } nav a { width:100%; justify-content:center; } .floating-settings-nav { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; top:0; margin:0 -16px 12px; padding:6px 8px; border-radius:0; border-left:0; border-right:0; } .floating-settings-nav p { flex:0 0 auto; min-width:118px; font-size:11px; align-self:center; } .floating-settings-nav a { flex:0 0 auto; min-width:118px; padding:6px 8px; scroll-snap-align:start; } .floating-settings-nav span { display:none; } .section-shell { padding:14px; border-radius:18px; } .section-heading { display:block; } .category-badge { margin-top:8px; } .grid,.two-col,.runtime-settings-grid,.subpanel-grid,.field-groups-grid { grid-template-columns:1fr; } .provider-config-row { display:block; } .provider-config-mobile-row { grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr); gap:8px; } .provider-config-mobile-controls { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .provider-config-control { min-width:0; } .provider-config-control-input { width:100%; min-width:0; } .card { padding:14px; border-radius:14px; } input, select, textarea, button { width:100%; margin-right:0; } input[type="checkbox"] { width:auto; } .pill { width:auto; } .action-row { display:grid; grid-template-columns:1fr; } table, thead, tbody, tr, th, td { display:block; width:100%; } th { display:none; } td { border-bottom:0; padding:6px 0; } tr { border-bottom:1px solid var(--line); padding:10px 0; } }
+    @media (max-width:720px) { header { padding:22px 16px 18px; } main { padding:16px; } h1 { font-size:26px; } nav { display:grid; grid-template-columns:1fr; } nav a { width:100%; justify-content:center; } .floating-settings-nav { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; top:0; margin:0 -16px 10px; padding:4px 6px; border-radius:0; border-left:0; border-right:0; gap:4px; } .floating-settings-nav p { flex:0 0 auto; min-width:92px; font-size:10px; align-self:center; } .floating-settings-nav a { flex:0 0 auto; min-width:92px; padding:5px 6px; scroll-snap-align:start; } .floating-settings-nav strong { font-size:11px; } .floating-settings-nav span { display:none; } .section-shell { padding:14px; border-radius:18px; } .section-heading { display:block; } .category-badge { margin-top:8px; } .grid,.two-col,.runtime-settings-grid,.subpanel-grid,.field-groups-grid { grid-template-columns:1fr; } .provider-config-row { display:block; } .provider-config-mobile-row { grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr); gap:8px; } .provider-config-mobile-controls { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .provider-config-control { min-width:0; } .provider-config-control-input { width:100%; min-width:0; } .card { padding:14px; border-radius:14px; } input, select, textarea, button { width:100%; margin-right:0; } input[type="checkbox"] { width:auto; } .pill { width:auto; } .action-row { display:grid; grid-template-columns:1fr; } table, thead, tbody, tr, th, td { display:block; width:100%; } th { display:none; } td { border-bottom:0; padding:6px 0; } tr { border-bottom:1px solid var(--line); padding:10px 0; } }
   </style>
 </head>
 <body data-light-admin-theme data-mobile-layout data-admin-shell data-e2e-admin-login>
@@ -94,14 +91,8 @@
     <div class="hero-inner">
     <p class="section-eyebrow">功能分区 · myip-py</p>
     <h1>Provider 管理控制台</h1>
-    <p>面向日常管理重新整理：把原来一个长 /admin 页面拆成独立功能页面卡片；先看网站概览，再按新增数据源、测试映射、启用 Provider 的顺序操作；后台 debug 默认收起。</p>
+    <p>面向日常管理重新整理：先看网站概览，再按新增数据源、测试映射、启用 Provider 的顺序操作；后台 debug 默认收起。</p>
     <p class="small">数据接口：<code>/api/admin/settings</code> · <code>/api/admin/providers</code> · <code>/api/admin/fields</code> · <code>/api/admin/lookup</code> · <code>/api/admin/config-status</code></p>
-    <nav data-page-card-nav class="page-card-nav" aria-label="功能页面导航">
-      <a href="#site-overview" data-page-card="site-overview"><strong>1. 网站概览</strong><span>总览与公开接口控制已合并，集中查看公开模式、运行配置和配置状态。</span></a>
-      <a href="#mapping-workspace" data-page-card="mapping-workspace"><strong>2. 字段与数据源映射</strong><span>新增数据源、测试字段映射、从验证结果生成字段来源。</span></a>
-      <a href="#provider-management" data-page-card="provider-management"><strong>3. Provider 管理</strong><span>启用 Provider、调整顺序与超时，并保存同一份配置 JSON。</span></a>
-      <a href="#lookup-debug">高级调试</a>
-    </nav>
     </div>
   </header>
   <main>

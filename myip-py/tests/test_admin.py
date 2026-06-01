@@ -157,8 +157,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "1. 网站概览" in body
     assert "2. 字段与数据源映射" in body
     assert "3. Provider 管理" in body
-    assert "功能页面" in body
-    assert "data-page-card-nav" in body
+    assert "功能页面" not in body
+    assert "data-page-card-nav" not in body
     assert "data-floating-settings-nav" in body
     assert "悬浮设置导航" in body
     assert "sticky" in body
@@ -176,7 +176,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-nav-mobile-compact" in body
     assert "grid-template-columns:repeat(6,minmax(0,1fr))" in body
     assert "white-space:nowrap" in body
-    assert "min-width:118px" in body
+    assert "min-width:92px" in body
+    assert "min-width:118px" not in body
     assert "min-width:150px" not in body
     assert "min-width:170px" not in body
     assert "data-nav-category=\"overview\"" in body
@@ -186,7 +187,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-nav-category=\"provider\"" in body
     assert "data-nav-category=\"debug\"" in body
     assert body.index('data-floating-settings-nav') < body.index('id="site-overview"')
-    assert "data-page-card=\"site-overview\"" in body
+    assert "data-page-card=\"site-overview\"" not in body
+    assert "集中查看公开模式、运行配置和配置状态" not in body
+    assert "从验证结果生成字段来源" not in body
     assert "网站概览" in body
     assert "总览与公开接口控制已合并" in body
     assert "data-site-overview" in body
