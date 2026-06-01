@@ -178,12 +178,14 @@ def test_admin_page_serves_provider_management_shell():
     assert "white-space:nowrap" in body
     assert "nav:not(.floating-settings-nav)" in body
     assert "nav { display:grid; grid-template-columns:1fr; }" not in body
-    assert ".floating-settings-nav { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); top:0" in body
-    assert "gap:2px; overflow-x:auto" in body
+    assert ".floating-settings-nav { display:flex; flex-wrap:nowrap; top:0" in body
+    assert "gap:1px; overflow-x:auto" in body
     assert ".floating-settings-nav p { display:none; }" in body
-    assert ".floating-settings-nav a { width:auto; min-width:0; padding:5px 2px; }" in body
-    assert ".floating-settings-nav strong { font-size:11px; }" in body
-    assert "gap:4px; overflow-x:auto" not in body
+    assert ".floating-settings-nav a { display:inline-flex; flex:0 0 auto; width:max-content; min-width:max-content; padding:5px 5px; overflow:visible; text-overflow:clip; white-space:nowrap; word-break:keep-all; }" in body
+    assert ".floating-settings-nav strong { font-size:12px; white-space:nowrap; word-break:keep-all; }" in body
+    assert "grid-template-columns:repeat(6,minmax(0,1fr)); top:0" not in body
+    assert "gap:2px; overflow-x:auto" not in body
+    assert ".floating-settings-nav strong { font-size:11px; }" not in body
     assert ".floating-settings-nav strong { font-size:10px; }" not in body
     assert "min-width:150px" not in body
     assert "min-width:170px" not in body
