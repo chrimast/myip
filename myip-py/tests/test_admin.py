@@ -217,6 +217,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "标准 2s" in body
     assert "宽松 5s" in body
     assert "data-provider-runtime-summary" in body
+    assert "provider-control-row" in body
+    assert "field-source-control-row" in body
+    assert ".provider-control-row, .field-source-control-row { display:flex" in body
+    assert ".provider-control-row button, .field-source-control-row button" in body
+    assert "grid-template-columns:1fr; } .provider-control-row" in body
     assert body.index('data-provider-view') > body.index('id="provider-management"')
     assert body.index('Provider 总览') < body.index('保存与公开控制')
     assert "新增数据源" in body
