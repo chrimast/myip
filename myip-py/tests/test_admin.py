@@ -232,8 +232,24 @@ def test_admin_page_serves_provider_management_shell():
     assert "访问限制设置" in body
     assert "DNS / DoH 设置" in body
     assert "BGP 图谱设置" in body
-    assert "IP 缓存粒度" in body
-    assert "ipv4_24" in body
+    assert "缓存有效期" in body
+    assert "5 分钟" in body
+    assert "1 小时" in body
+    assert "缓存范围" in body
+    assert "仅相同 IP" in body
+    assert "同一 IPv4 /24 网段" in body
+    assert "data-runtime-preset" in body
+    assert "普通：60 次/分钟" in body
+    assert "严格：20 次/分钟" in body
+    assert "DoH 解析服务顺序" in body
+    assert "data-doh-provider-order" in body
+    assert "优先 IPv4" in body
+    assert "优先 IPv6" in body
+    assert "图谱复杂度" in body
+    assert "简洁" in body
+    assert "标准" in body
+    assert "详细" in body
+    assert "data-bgp-complexity" in body
     assert "data-runtime-settings" in body
     assert "data-cache-settings" in body
     assert "data-rate-limit-settings" in body
@@ -298,6 +314,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "公开接口模式" in body
     assert "/api/admin/config-status" in body
     assert "恢复默认生产链" in body
+    assert "providerConfigReset:'/api/admin/provider-config/reset'" in body
+    assert "fetch(endpoints.providerConfigReset, {method:'POST'})" in body
     assert "字段与数据源映射" in body
     assert "自定义 Provider" in body
     assert "自定义字段" in body
