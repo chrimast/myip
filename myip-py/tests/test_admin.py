@@ -209,6 +209,14 @@ def test_admin_page_serves_provider_management_shell():
     assert "Provider 总览" in body
     assert "Provider 视图与原 Provider 概览已合并" in body
     assert "Provider 配置已合并到 Provider 总览" in body
+    assert "调用链顺序" in body
+    assert "data-provider-move-up" in body
+    assert "data-provider-move-down" in body
+    assert "data-provider-timeout-preset" in body
+    assert "快速 1s" in body
+    assert "标准 2s" in body
+    assert "宽松 5s" in body
+    assert "data-provider-runtime-summary" in body
     assert body.index('data-provider-view') > body.index('id="provider-management"')
     assert body.index('Provider 总览') < body.index('保存与公开控制')
     assert "新增数据源" in body
@@ -263,10 +271,18 @@ def test_admin_page_serves_provider_management_shell():
     assert "Provider 卡片" not in body
     assert "data-provider-card" in body
     assert "步骤 1：基本信息" in body
+    assert "自动生成 Provider ID" in body
+    assert "data-autofill-provider-id" in body
     assert "步骤 2：Endpoint" in body
+    assert "接口地址需要包含 {ip}" in body
+    assert "data-endpoint-template-help" in body
     assert "步骤 3：字段映射" in body
     assert "步骤 4：测试验证" in body
     assert "步骤 5：启用" in body
+    assert "只保存，不启用" in body
+    assert "启用到后台调试" in body
+    assert "启用到公开接口，需要验证保护" in body
+    assert "data-custom-provider-enable-scope" in body
     assert "字段筛选" in body
     assert "data-field-filter" in body
     assert "data-field-summary-row" in body
@@ -296,6 +312,13 @@ def test_admin_page_serves_provider_management_shell():
     assert "字段开关已合并到评分字段和非评分字段" in body
     assert "编辑字段映射" in body
     assert "保存字段映射" in body
+    assert "可视化来源编辑" in body
+    assert "添加来源" in body
+    assert "data-field-source-list" in body
+    assert "data-field-source-move-up" in body
+    assert "data-field-source-move-down" in body
+    assert "高级 JSON 编辑" in body
+    assert "默认建议使用上面的来源列表" in body
     assert "data-field-mapping-editor" in body
     assert "data-save-field-mappings" in body
     assert "/api/admin/field-mappings" in body
