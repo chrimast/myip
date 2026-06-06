@@ -239,6 +239,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "高级调试" in body
     assert "4. 运行设置" not in body
     assert "运行设置已并入网站概览" in body
+    assert "运行生效状态" not in body
+    assert "data-runtime-status-panel" not in body
+    assert 'id="runtime-status"' not in body
+    assert "IP cache" not in body
+    assert "DoH 顺序" not in body
     assert "data-site-runtime-settings" in body
     assert body.index('data-site-runtime-settings') < body.index('id="mapping-workspace"')
     assert "缓存设置" in body
@@ -251,11 +256,36 @@ def test_admin_page_serves_provider_management_shell():
     assert "缓存范围" in body
     assert "仅相同 IP" in body
     assert "同一 IPv4 /24 网段" in body
-    assert "data-runtime-preset" in body
-    assert "普通：60 次/分钟" in body
-    assert "严格：20 次/分钟" in body
+    assert "data-runtime-preset" not in body
+    assert "普通：60 次/分钟" not in body
+    assert "严格：20 次/分钟" not in body
+    assert "宽松：120 次/分钟" not in body
+    assert "宽松：60 次/分钟" not in body
+    assert "普通：30 次/分钟" not in body
+    assert "严格：10 次/分钟" not in body
+    assert "/api/ip 每分钟最多" in body
+    assert 'select data-runtime="rate_limit.ip_per_minute" data-runtime-unit="count"' in body
+    assert "严格 20 次/分钟" in body
+    assert "普通 60 次/分钟" in body
+    assert "宽松 120 次/分钟" in body
+    assert "自定义 /api/ip 次数" in body
+    assert 'data-runtime-custom="rate_limit.ip_per_minute"' in body
+    assert "/api/bgp 每分钟最多" in body
+    assert 'select data-runtime="rate_limit.bgp_per_minute" data-runtime-unit="count"' in body
+    assert "严格 10 次/分钟" in body
+    assert "普通 30 次/分钟" in body
+    assert "宽松 60 次/分钟" in body
+    assert "自定义 /api/bgp 次数" in body
+    assert 'data-runtime-custom="rate_limit.bgp_per_minute"' in body
     assert "DoH 解析服务顺序" in body
     assert "data-doh-provider-order" in body
+    assert "data-doh-provider-list" in body
+    assert "data-doh-provider-item" in body
+    assert "data-doh-provider-move-up" in body
+    assert "data-doh-provider-move-down" in body
+    assert "优先使用排在上面的 DoH 服务；用上移/下移调整顺序" in body
+    assert "按住 Ctrl/Command 可多选" not in body
+    assert 'select data-doh-provider-order multiple' not in body
     assert "优先 IPv4" in body
     assert "优先 IPv6" in body
     assert "图谱复杂度" in body
@@ -273,7 +303,13 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-runtime-panel-body" in body
     assert ".runtime-panel-body { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" in body
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
-    assert ".runtime-setting-row.compact-toggle { grid-template-columns:max-content min-content" in body
+    assert ".compact-toggle { display:inline-flex; align-items:center" in body
+    assert ".pill.compact-toggle { display:inline-flex; }" in body
+    assert ".compact-toggle input[type=\"checkbox\"] { width:auto; min-width:auto" in body
+    assert ".runtime-setting-row.compact-toggle { display:inline-flex" in body
+    assert ".compact-setting-row.compact-toggle { display:inline-flex" in body
+    assert ".compact-setting-row.compact-toggle { grid-template-columns:max-content min-content" not in body
+    assert ".runtime-setting-row.compact-toggle { grid-template-columns:max-content min-content" not in body
     assert "runtime-panel-heading" in body
     assert "runtime-heading-toggle" in body
     assert "data-runtime-heading-toggle" in body
@@ -281,13 +317,16 @@ def test_admin_page_serves_provider_management_shell():
     assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="rate_limit.ip_enabled"' in body
     assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="dns.doh_enabled"' in body
     assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="bgp.enabled"' in body
+    assert '缓存设置</h3><label class="runtime-heading-toggle" data-runtime-heading-toggle><input type="checkbox" data-runtime="cache.ip_enabled"> IP 缓存</label><p class="small settings-title-row-description"' in body
+    assert '访问限制设置</h3><label class="runtime-heading-toggle" data-runtime-heading-toggle><input type="checkbox" data-runtime="rate_limit.ip_enabled"> /api/ip</label><p class="small settings-title-row-description"' in body
+    assert 'DNS / DoH 设置</h3><label class="runtime-heading-toggle" data-runtime-heading-toggle><input type="checkbox" data-runtime="dns.doh_enabled"> DoH</label><p class="small settings-title-row-description"' in body
+    assert 'BGP 图谱设置</h3><label class="runtime-heading-toggle" data-runtime-heading-toggle><input type="checkbox" data-runtime="bgp.enabled"> 图谱</label><p class="small settings-title-row-description"' in body
     assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="cache.ip_enabled"' not in body
     assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="rate_limit.ip_enabled"' not in body
     assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="dns.doh_enabled"' not in body
     assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="bgp.enabled"' not in body
-    assert "runtime-preset-row" in body
+    assert "runtime-preset-row" not in body
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
-    assert ".runtime-preset-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
     assert ".runtime-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; }" in body
@@ -317,7 +356,41 @@ def test_admin_page_serves_provider_management_shell():
     assert "启用到后台调试" in body
     assert "启用到公开接口，需要验证保护" in body
     assert "data-custom-provider-enable-scope" in body
+    assert "data-section-title-row" in body
+    assert "data-section-title-description" in body
+    assert "1. 网站概览</h2><p class=\"section-lead small settings-title-row-description\" data-section-title-description" in body
+    assert "2. 字段与数据源映射</h2><p class=\"section-lead small settings-title-row-description\" data-section-title-description" in body
+    assert "3. Provider 管理</h2><p class=\"section-lead small settings-title-row-description\" data-section-title-description" in body
+    assert "高级调试</h2><p class=\"section-lead small settings-title-row-description\" data-section-title-description" in body
+    assert "data-runtime-settings-title-row" in body
+    assert "settings-title-row" in body
+    assert "settings-title-row-title" in body
+    assert "settings-title-row-description" in body
+    assert ".settings-title-row { display:flex; align-items:baseline" in body
+    assert ".settings-title-row-description { margin:0; flex:1" in body
+    assert "data-runtime-card-title-row" in body
+    assert "data-settings-card-title-row" in body
+    assert "运行设置</h3><p class=\"small settings-title-row-description\"" in body
     assert "字段筛选" in body
+    assert "settings-card-stack" in body
+    assert "compact-settings-body" in body
+    assert "compact-setting-row" in body
+    assert "data-compact-settings-body" in body
+    assert "data-field-filter-card" in body
+    assert "data-new-data-source-stack" in body
+    assert "data-custom-provider-settings-card" in body
+    assert "data-custom-field-settings-card" in body
+    assert "data-provider-settings-stack" in body
+    assert "data-provider-config-actions" in body
+    assert "data-health-check-settings" in body
+    assert "data-import-export-settings" in body
+    assert "data-api-key-settings" in body
+    assert "data-admin-auth-compact-settings" in body
+    assert "data-lookup-settings-card" in body
+    assert ".settings-card-stack { display:grid; grid-template-columns:1fr" in body
+    assert ".compact-settings-body { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" in body
+    assert ".compact-action-row { display:grid; grid-column:1 / -1" in body
+    assert ".compact-settings-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
     assert "data-field-filter" in body
     assert "data-field-summary-row" in body
     assert "data-field-detail" in body
@@ -326,6 +399,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-provider-field-details" in body
     assert "映射问题提示" in body
     assert "data-mapping-issues" in body
+    assert "mapping-issues-row" in body
+    assert "data-mapping-issues-row" in body
+    assert '<h3 class="settings-title-row-title">映射问题提示</h3><div id="mapping-issues"' in body
     assert "字段管理" not in body
     assert "字段视图" in body
     assert "固定字段名称" not in body
@@ -343,6 +419,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-display-fields" in body
     assert "data-field-groups-grid" in body
     assert "field-groups-grid" in body
+    assert "field-group-cards" in body
+    assert "field-card-summary-row" in body
+    assert "field-card-title-row" in body
+    assert "field-card-status-row" in body
+    assert 'data-field-card><div class="field-card-summary-row"' in body
     assert "字段开关已合并到评分字段和非评分字段" in body
     assert "编辑字段映射" in body
     assert "保存字段映射" in body
@@ -589,7 +670,9 @@ def test_admin_page_exposes_enhanced_admin_tools_and_e2e_hooks():
 
     assert "data-admin-api-key-manager" in body
     assert "/api/admin/api-keys" in body
-    assert "data-runtime-status-panel" in body
+    assert "data-runtime-status-panel" not in body
+    assert "运行生效状态" not in body
+    assert "data-runtime-settings-panel" in body
     assert "/api/admin/runtime-status" in body
     assert "data-clear-runtime-cache" in body
     assert "data-health-latency" in body
