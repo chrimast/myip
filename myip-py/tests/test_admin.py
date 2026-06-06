@@ -269,10 +269,22 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-runtime-settings-vertical" in body
     assert "grid-template-columns:1fr" in body
     assert "runtime-setting-row" in body
+    assert "runtime-panel-heading" in body
+    assert "runtime-heading-toggle" in body
+    assert "data-runtime-heading-toggle" in body
+    assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="cache.ip_enabled"' in body
+    assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="rate_limit.ip_enabled"' in body
+    assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="dns.doh_enabled"' in body
+    assert 'data-runtime-heading-toggle><input type="checkbox" data-runtime="bgp.enabled"' in body
+    assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="cache.ip_enabled"' not in body
+    assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="rate_limit.ip_enabled"' not in body
+    assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="dns.doh_enabled"' not in body
+    assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="bgp.enabled"' not in body
     assert "runtime-preset-row" in body
     assert ".runtime-setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,auto)" in body
     assert ".runtime-preset-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))" in body
-    assert "input, select, textarea, button { width:100%; margin-right:0; } .runtime-setting-row" in body
+    assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
+    assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
     assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) 96px; }" in body
     assert "data-cache-settings" in body
     assert "data-rate-limit-settings" in body
