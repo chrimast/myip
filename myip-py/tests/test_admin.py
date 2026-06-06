@@ -269,6 +269,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-runtime-settings-vertical" in body
     assert "grid-template-columns:1fr" in body
     assert "runtime-setting-row" in body
+    assert "runtime-panel-body" in body
+    assert "data-runtime-panel-body" in body
+    assert ".runtime-panel-body { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" in body
+    assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
+    assert ".runtime-setting-row.compact-toggle { grid-template-columns:max-content min-content" in body
     assert "runtime-panel-heading" in body
     assert "runtime-heading-toggle" in body
     assert "data-runtime-heading-toggle" in body
@@ -281,11 +286,13 @@ def test_admin_page_serves_provider_management_shell():
     assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="dns.doh_enabled"' not in body
     assert 'pill runtime-setting-row"><input type="checkbox" data-runtime="bgp.enabled"' not in body
     assert "runtime-preset-row" in body
-    assert ".runtime-setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,auto)" in body
+    assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert ".runtime-preset-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
-    assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) 96px; }" in body
+    assert ".runtime-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; }" in body
+    assert ".runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
+    assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { min-width:0; width:72px;" in body
     assert "data-cache-settings" in body
     assert "data-rate-limit-settings" in body
     assert "data-dns-settings" in body
