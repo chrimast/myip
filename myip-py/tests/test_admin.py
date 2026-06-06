@@ -264,9 +264,10 @@ def test_admin_page_serves_provider_management_shell():
     assert "详细" in body
     assert "data-bgp-complexity" in body
     assert "data-runtime-settings" in body
-    assert "runtime-settings-grid horizontal" in body
-    assert "data-runtime-settings-horizontal" in body
-    assert "grid-template-columns:repeat(4,minmax(0,1fr))" in body
+    assert "runtime-settings-grid vertical" in body
+    assert "runtime-settings-grid vertical subpanel-grid" not in body
+    assert "data-runtime-settings-vertical" in body
+    assert "grid-template-columns:1fr" in body
     assert "runtime-setting-row" in body
     assert "runtime-preset-row" in body
     assert ".runtime-setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,auto)" in body
