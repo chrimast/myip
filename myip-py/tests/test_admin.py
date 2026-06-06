@@ -264,6 +264,15 @@ def test_admin_page_serves_provider_management_shell():
     assert "详细" in body
     assert "data-bgp-complexity" in body
     assert "data-runtime-settings" in body
+    assert "runtime-settings-grid horizontal" in body
+    assert "data-runtime-settings-horizontal" in body
+    assert "grid-template-columns:repeat(4,minmax(0,1fr))" in body
+    assert "runtime-setting-row" in body
+    assert "runtime-preset-row" in body
+    assert ".runtime-setting-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,auto)" in body
+    assert ".runtime-preset-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))" in body
+    assert "input, select, textarea, button { width:100%; margin-right:0; } .runtime-setting-row" in body
+    assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) 96px; }" in body
     assert "data-cache-settings" in body
     assert "data-rate-limit-settings" in body
     assert "data-dns-settings" in body
