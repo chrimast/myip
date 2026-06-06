@@ -816,6 +816,10 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):
                     },
                 }
             )
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse({"error": "no token data"})
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse({"message": "no token data"})
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -825,6 +829,8 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):
     assert calls == [
         ("https://api.ipapi.is", {"q": "8.8.8.8"}),
         ("https://ipwho.is/8.8.8.8", None),
+        ("https://ipinfo.io/8.8.8.8/json", None),
+        ("https://api.ipdata.co/8.8.8.8", None),
     ]
     assert result == IPInfo(
         ip="8.8.8.8",
@@ -839,7 +845,6 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):
         latitude=37.4056,
         longitude=-122.0775,
         provider="ipwho.is",
-        asn_domain="google.com",
         org_domain="google.com",
         field_sources={
             "ip": "ipwho.is",
@@ -853,7 +858,6 @@ def test_ipapi_is_provider_falls_back_to_ipwho_when_primary_fails(monkeypatch):
             "isp": "ipwho.is",
             "latitude": "ipwho.is",
             "longitude": "ipwho.is",
-            "asn_domain": "ipwho.is",
             "org_domain": "ipwho.is",
         },
     )
@@ -1040,11 +1044,6 @@ def test_provider_falls_back_through_ipapi_org_ipinfo_and_ipdata(monkeypatch):
         region="California",
         city="Mountain View",
         asn="AS15169",
-        asn_owner="Google LLC",
-        org="Google LLC",
-        isp="Google LLC",
-        latitude=37.4056,
-        longitude=-122.0775,
         provider="ipdata.co",
         asn_domain="google.com",
         field_sources={
@@ -1054,11 +1053,6 @@ def test_provider_falls_back_through_ipapi_org_ipinfo_and_ipdata(monkeypatch):
             "region": "ipdata.co",
             "city": "ipdata.co",
             "asn": "ipdata.co",
-            "asn_owner": "ipdata.co",
-            "org": "ipdata.co",
-            "isp": "ipdata.co",
-            "latitude": "ipdata.co",
-            "longitude": "ipdata.co",
             "asn_domain": "ipdata.co",
         },
     )

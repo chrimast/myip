@@ -39,13 +39,22 @@ def test_provider_merges_partial_results_and_tracks_field_sources(monkeypatch):
                     "security": {"proxy": True},
                 }
             )
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse({"error": "no token data"})
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse({"message": "no token data"})
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
 
     result = IPAPIIsLookupProvider().lookup("8.8.8.8")
 
-    assert calls == ["https://api.ipapi.is", "https://ipwho.is/8.8.8.8"]
+    assert calls == [
+        "https://api.ipapi.is",
+        "https://ipwho.is/8.8.8.8",
+        "https://ipinfo.io/8.8.8.8/json",
+        "https://api.ipdata.co/8.8.8.8",
+    ]
     assert result.provider == "ipapi.is+ipwho.is"
     assert result.country == "United States"
     assert result.country_code == "US"
@@ -53,10 +62,12 @@ def test_provider_merges_partial_results_and_tracks_field_sources(monkeypatch):
     assert result.region == "California"
     assert result.city == "Mountain View"
     assert result.isp == "Google LLC"
+    assert result.asn_owner == "Google LLC"
+    assert result.org is None
     assert result.latitude == 37.4056
     assert result.longitude == -122.0775
     assert result.is_proxy is True
-    assert result.asn_domain == "google.com"
+    assert result.asn_domain is None
     assert result.org_domain == "google.com"
     assert result.field_sources == {
         "ip": "ipapi.is",
@@ -70,7 +81,6 @@ def test_provider_merges_partial_results_and_tracks_field_sources(monkeypatch):
         "isp": "ipwho.is",
         "latitude": "ipwho.is",
         "longitude": "ipwho.is",
-        "asn_domain": "ipwho.is",
         "org_domain": "ipwho.is",
         "is_proxy": "ipwho.is",
     }
@@ -141,6 +151,70 @@ def test_ipinfo_asn_fallback_does_not_use_asn_org_as_enterprise_or_isp(monkeypat
     assert result.field_sources["isp"] == "ipapi.is"
     assert result.field_sources["asn_domain"] == "ipinfo.io"
     assert result.field_sources["org_domain"] == "ipapi.is"
+
+
+def test_ipinfo_and_ipdata_domain_fallbacks_do_not_fill_go_identity_fields(monkeypatch):
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_get(url: str, *, params: dict[str, str] | None = None, timeout: float) -> FakeResponse:
+        calls.append(url)
+        if url == "https://api.ipapi.is":
+            return FakeResponse(
+                {
+                    "ip": "203.0.113.20",
+                    "location": {"country": {"name": "Exampleland", "code": "EX"}, "city": "Example City"},
+                    "asn": {"asn": 64520},
+                    "company": {"name": "IPAPI Customer Company"},
+                    "isp": "IPAPI Access ISP",
+                }
+            )
+        if url == "https://ipinfo.io/203.0.113.20/json":
+            return FakeResponse(
+                {
+                    "ip": "203.0.113.20",
+                    "org": "AS64520 Misleading IPInfo Org String",
+                    "asn": {"asn": "AS64520", "name": "IPInfo ASN Name", "domain": "ipinfo-asn.example"},
+                }
+            )
+        if url == "https://api.ipdata.co/203.0.113.20":
+            return FakeResponse(
+                {
+                    "ip": "203.0.113.20",
+                    "asn": {"asn": "64520", "name": "IPData ASN Name", "domain": "ipdata-asn.example"},
+                    "organisation": "IPData Organisation",
+                    "isp": "IPData ISP",
+                }
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = IPAPIIsLookupProvider().lookup("203.0.113.20")
+
+    assert calls == [
+        "https://api.ipapi.is",
+        "https://ipinfo.io/203.0.113.20/json",
+        "https://api.ipdata.co/203.0.113.20",
+    ]
+    assert result.asn == "AS64520"
+    assert result.asn_owner is None
+    assert result.org == "IPAPI Customer Company"
+    assert result.isp == "IPAPI Access ISP"
+    assert result.asn_domain == "ipinfo-asn.example"
+    assert "asn_owner" not in result.field_sources
+    assert result.field_sources["org"] == "ipapi.is"
+    assert result.field_sources["isp"] == "ipapi.is"
+    assert result.field_sources["asn_domain"] == "ipinfo.io"
 
 
 def test_provider_maps_extra_ipapi_is_security_flags(monkeypatch):
@@ -530,16 +604,25 @@ def test_provider_merge_fills_domains_from_later_provider(monkeypatch):
                     },
                 }
             )
+        if url == "https://ipinfo.io/8.8.8.8/json":
+            return FakeResponse({"ip": "8.8.8.8", "asn_domain": "asn.google"})
+        if url == "https://api.ipdata.co/8.8.8.8":
+            return FakeResponse({"ip": "8.8.8.8", "asn": {"asn": "15169", "domain": "ipdata.google"}})
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
 
     result = IPAPIIsLookupProvider().lookup("8.8.8.8")
 
-    assert calls == ["https://api.ipapi.is", "https://ipwho.is/8.8.8.8"]
-    assert result.asn_domain == "google.com"
+    assert calls == [
+        "https://api.ipapi.is",
+        "https://ipwho.is/8.8.8.8",
+        "https://ipinfo.io/8.8.8.8/json",
+        "https://api.ipdata.co/8.8.8.8",
+    ]
+    assert result.asn_domain == "asn.google"
     assert result.org_domain == "google.com"
-    assert result.field_sources["asn_domain"] == "ipwho.is"
+    assert result.field_sources["asn_domain"] == "ipinfo.io"
     assert result.field_sources["org_domain"] == "ipwho.is"
 
 
@@ -582,7 +665,7 @@ def test_provider_pipeline_follows_go_step_order_for_basic_then_domain_backfill(
     assert result.field_sources["asn_domain"] == "ipinfo.io"
 
 
-def test_provider_merge_uses_go_field_priority_instead_of_first_non_empty(monkeypatch):
+def test_provider_merge_keeps_go_identity_fields_separate_from_domain_fallbacks(monkeypatch):
     calls: list[str] = []
 
     class FakeResponse:
@@ -629,12 +712,14 @@ def test_provider_merge_uses_go_field_priority_instead_of_first_non_empty(monkey
     result = IPAPIIsLookupProvider().lookup("8.8.8.8")
 
     assert calls == ["https://api.ipapi.is", "https://ipinfo.io/8.8.8.8/json", "https://api.ipdata.co/8.8.8.8"]
-    assert result.asn_owner == "IPInfo ASN Owner LLC"
+    assert result.asn_owner is None
     assert result.org == "Primary Company LLC"
     assert result.isp == "Primary ISP LLC"
-    assert result.field_sources["asn_owner"] == "ipinfo.io"
+    assert result.asn_domain == "ipinfo.example"
+    assert "asn_owner" not in result.field_sources
     assert result.field_sources["org"] == "ipapi.is"
     assert result.field_sources["isp"] == "ipapi.is"
+    assert result.field_sources["asn_domain"] == "ipinfo.io"
 
 
 def test_provider_pipeline_skips_basic_fallback_when_primary_has_basic_fields_but_still_fetches_missing_domains(monkeypatch):
