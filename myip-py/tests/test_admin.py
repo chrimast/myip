@@ -260,6 +260,13 @@ def test_admin_page_serves_provider_management_shell():
     assert "field-source-control-row" in body
     assert ".field-group-cards { display:grid; grid-template-columns:1fr; gap:10px; align-items:start; }" in body
     assert ".field-group-cards > .card { width:100%; min-width:0; }" in body
+    assert ".field-card-summary-row { display:grid; grid-template-columns:minmax(140px,1fr) auto auto; align-items:center; gap:8px; }" in body
+    assert ".field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:nowrap; min-width:0; }" in body
+    assert ".field-card-status-row { display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; flex-wrap:nowrap; white-space:nowrap; }" in body
+    assert ".field-card-title-row h3 { margin:0; white-space:nowrap; }" in body
+    assert ".field-card-summary-row { display:flex" not in body
+    assert ".field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap" not in body
+    assert ".field-card-status-row { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap" not in body
     assert ".field-group-cards { display:flex" not in body
     assert ".field-group-cards > .card { flex:" not in body
     assert ".provider-control-row, .field-source-control-row { display:flex" in body
@@ -397,13 +404,23 @@ def test_admin_page_serves_provider_management_shell():
     assert "配置接口 → 扫描字段 → 绑定字段 → 验证并启用" in body
     assert "data-custom-provider-workbench" in body
     assert "data-provider-workbench-flow" in body
+    assert "data-provider-workbench-left-column" in body
+    assert "data-provider-workbench-right-column" in body
     assert "data-provider-workbench-setup" in body
-    assert "data-provider-workbench-lab" in body
-    assert "provider-workbench-lab-grid" in body
+    assert "data-provider-workbench-lab" not in body
+    assert "provider-workbench-lab-grid" not in body
     assert "data-provider-workbench-finish" in body
-    assert "grid-template-columns:1fr" in body
-    assert "grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px" in body
+    assert 'data-provider-workbench-step="配置接口"' in body
+    assert 'data-provider-workbench-step="扫描字段"' in body
+    assert 'data-provider-workbench-step="绑定字段"' in body
+    assert 'data-provider-workbench-step="验证并启用"' in body
+    assert body.index('data-provider-workbench-left-column') < body.index('data-provider-config-panel') < body.index('data-provider-scan-panel') < body.index('data-provider-workbench-right-column')
+    assert body.index('data-provider-workbench-right-column') < body.index('data-provider-binding-panel') < body.index('data-provider-preview-summary') < body.index('data-provider-workbench-finish')
+    assert ".custom-provider-workbench-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }" in body
+    assert ".provider-workbench-column { display:grid; gap:12px; min-width:0; }" in body
+    assert ".provider-workbench-panel { margin-top:0; min-width:0; height:auto; }" in body
     assert "grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr)" not in body
+    assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr)" not in body
     assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr) minmax(0,1.45fr)" not in body
     assert "data-provider-preview-summary" in body
     assert "data-provider-action-bar" in body

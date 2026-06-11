@@ -134,19 +134,18 @@
     .field-group-column { min-width:0; }
     .field-group-cards { display:grid; grid-template-columns:1fr; gap:10px; align-items:start; }
     .field-group-cards > .card { width:100%; min-width:0; }
-    .field-card-summary-row { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
-    .field-card-title-row h3 { margin:0; }
-    .field-card-status-row { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
+    .field-card-summary-row { display:grid; grid-template-columns:minmax(140px,1fr) auto auto; align-items:center; gap:8px; }
+    .field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:nowrap; min-width:0; }
+    .field-card-title-row h3 { margin:0; white-space:nowrap; }
+    .field-card-status-row { display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; flex-wrap:nowrap; white-space:nowrap; }
     .custom-provider-workbench-card { display:grid; gap:14px; }
     .provider-workbench-flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
     .provider-workbench-flow span { display:flex; align-items:center; justify-content:center; min-height:32px; border-radius:6px; background:#fff; color:#1e40af; font-size:12px; font-weight:700; }
     .overview-public-runtime-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
     .overview-public-runtime-grid > div { min-width:0; }
-    .custom-provider-workbench-grid { display:grid; grid-template-columns:1fr; gap:12px; align-items:start; }
-    .provider-workbench-main-panel { display:grid; gap:12px; min-width:0; }
-    .provider-workbench-lab-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
-    .provider-workbench-panel { min-width:0; height:auto; }
+    .custom-provider-workbench-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
+    .provider-workbench-column { display:grid; gap:12px; min-width:0; }
+    .provider-workbench-panel { margin-top:0; min-width:0; height:auto; }
     .provider-config-compact { grid-template-columns:1fr; }
     .provider-endpoint-row { grid-template-columns:max-content minmax(0,1fr); }
     .custom-provider-scan-results { margin-top:10px; max-height:420px; overflow:auto; }
@@ -164,7 +163,7 @@
     .custom-provider-binding-row { display:grid; grid-template-columns:minmax(140px,1fr) minmax(150px,1fr) minmax(92px,max-content) minmax(84px,max-content); gap:8px; align-items:center; margin-bottom:8px; }
     .custom-provider-binding-row select { width:100%; margin:0; }
     [data-light-admin-theme] { color-scheme: light; }
-    @media (max-width:860px) { .two-col { grid-template-columns:1fr; } .provider-ops-grid { grid-template-columns:1fr; } .custom-provider-workbench-grid,.provider-workbench-lab-grid,.overview-public-runtime-grid { grid-template-columns:1fr; } .provider-preview-columns { grid-template-columns:1fr; } }
+    @media (max-width:860px) { .two-col { grid-template-columns:1fr; } .provider-ops-grid { grid-template-columns:1fr; } .custom-provider-workbench-grid,.overview-public-runtime-grid { grid-template-columns:1fr; } .provider-preview-columns { grid-template-columns:1fr; } }
     @media (max-width:720px) { header { padding:22px 16px 18px; } main { padding:16px; } h1 { font-size:26px; } nav:not(.floating-settings-nav) { display:grid; grid-template-columns:1fr; } nav:not(.floating-settings-nav) a { width:100%; justify-content:center; } .floating-settings-nav { display:flex; flex-wrap:nowrap; top:0; margin:0 -16px 10px; padding:4px 6px; border-radius:0; border-left:0; border-right:0; gap:1px; overflow-x:auto; } .floating-settings-nav p { display:none; } .floating-settings-nav a { display:inline-flex; flex:0 0 auto; width:max-content; min-width:max-content; padding:5px 5px; overflow:visible; text-overflow:clip; white-space:nowrap; word-break:keep-all; } .floating-settings-nav strong { font-size:13px; white-space:nowrap; word-break:keep-all; } .floating-settings-nav span { display:none; } .section-shell { padding:14px; border-radius:18px; } .section-heading { display:block; } .category-badge { margin-top:8px; } .grid,.two-col,.subpanel-grid,.field-groups-grid { grid-template-columns:1fr; } .runtime-settings-grid { grid-template-columns:1fr; overflow:visible; padding-bottom:0; } .provider-config-row { display:block; } .provider-config-mobile-row { grid-template-columns:1fr; gap:8px; } .provider-config-mobile-controls { gap:6px; } .provider-config-control { min-width:0; } .provider-config-control-input { width:100%; min-width:0; } .card { padding:14px; border-radius:14px; } input, select, textarea, button { width:100%; margin-right:0; } .compact-settings-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .compact-settings-body p.small, .compact-settings-body pre, .compact-settings-body details { grid-column:1 / -1; } .compact-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; } .compact-setting-row.compact-toggle { display:inline-flex; } .compact-setting-row input:not([type="checkbox"]), .compact-setting-row select { min-width:0; width:72px; max-width:100%; justify-self:end; } .compact-setting-row textarea { min-height:88px; } .compact-action-row { grid-template-columns:repeat(auto-fit,minmax(132px,max-content)); } .runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .runtime-panel-body p.small { grid-column:1 / -1; } .runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; } .runtime-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; } .runtime-setting-row.compact-toggle { display:inline-flex; } .runtime-setting-row input:not([type="checkbox"]), .runtime-setting-row select { min-width:0; width:72px; max-width:100%; margin:0; justify-self:end; } input[type="checkbox"] { width:auto; } .pill { width:auto; } .action-row:not(.provider-control-row):not(.field-source-control-row) { display:grid; grid-template-columns:1fr; } .provider-control-row, .field-source-control-row { display:flex; flex-wrap:nowrap; grid-template-columns:none; } .provider-control-row button, .field-source-control-row button { width:auto; min-width:0; padding:9px 8px; } table, thead, tbody, tr, th, td { display:block; width:100%; } th { display:none; } td { border-bottom:0; padding:6px 0; } tr { border-bottom:1px solid var(--line); padding:10px 0; } }
   </style>
 </head>
@@ -251,62 +250,63 @@
           <div class="settings-title-row" data-settings-card-title-row><h3 class="settings-title-row-title">自定义 Provider 工作台</h3><p class="small settings-title-row-description">配置接口 → 扫描字段 → 绑定字段 → 验证并启用；保存后可参与后台 <code>/api/admin/lookup</code>，公开 <code>/api/ip</code> 需要显式允许。</p></div>
           <div class="provider-workbench-flow" data-provider-workbench-flow><span>配置接口</span><span>扫描字段</span><span>绑定字段</span><span>验证并启用</span></div>
           <div class="custom-provider-workbench-grid">
-            <section class="subpanel provider-workbench-panel" data-provider-config-panel data-provider-workbench-setup>
-              <h3 class="settings-title-row-title">Provider 配置</h3>
-              <form id="custom-provider-form">
-                <div class="compact-settings-body provider-config-compact" data-compact-settings-body>
-                  <p class="small help" data-form-help>显示名称给人看，Provider ID 用于保存；Endpoint 必须是 HTTPS 且包含 <code>{ip}</code>。</p>
-                  <label class="compact-setting-row">Provider ID <input id="custom-provider-id" placeholder="provider id，例如 example-provider"></label>
-                  <label class="compact-setting-row">显示名称 <input id="custom-provider-name" placeholder="显示名称"></label>
-                  <label class="compact-setting-row provider-endpoint-row">Endpoint <input id="custom-provider-endpoint" placeholder="https://api.example.com/{ip}"></label>
-                  <p class="small help" data-form-help data-endpoint-template-help>接口地址需要包含 <code>{ip}</code>；Key / Token 只保存在后台配置；测试与公开调用会按认证方式携带请求头。</p>
-                  <label class="compact-setting-row">认证方式 <select id="custom-provider-auth-type" data-custom-provider-auth-type><option value="none">不需要 Key</option><option value="api_key">API Key 请求头</option><option value="bearer_token">Bearer Token</option></select></label>
-                  <label class="compact-setting-row">Header 名 <input id="custom-provider-auth-name" data-custom-provider-auth-name placeholder="x-api-key 或 Authorization"></label>
-                  <label class="compact-setting-row">Key/Token <input id="custom-provider-auth-value" data-custom-provider-auth-value type="password" placeholder="无需认证可留空"></label>
-                  <div class="compact-action-row"><button type="button" class="secondary" data-autofill-provider-id>自动生成 Provider ID</button><button type="button" class="secondary" data-clear-custom-provider-form>清空表单</button></div>
+            <div class="provider-workbench-column" data-provider-workbench-left-column>
+              <section class="subpanel provider-workbench-panel" data-provider-config-panel data-provider-workbench-setup data-provider-workbench-step="配置接口">
+                <h3 class="settings-title-row-title">Provider 配置</h3>
+                <form id="custom-provider-form">
+                  <div class="compact-settings-body provider-config-compact" data-compact-settings-body>
+                    <p class="small help" data-form-help>显示名称给人看，Provider ID 用于保存；Endpoint 必须是 HTTPS 且包含 <code>{ip}</code>。</p>
+                    <label class="compact-setting-row">Provider ID <input id="custom-provider-id" placeholder="provider id，例如 example-provider"></label>
+                    <label class="compact-setting-row">显示名称 <input id="custom-provider-name" placeholder="显示名称"></label>
+                    <label class="compact-setting-row provider-endpoint-row">Endpoint <input id="custom-provider-endpoint" placeholder="https://api.example.com/{ip}"></label>
+                    <p class="small help" data-form-help data-endpoint-template-help>接口地址需要包含 <code>{ip}</code>；Key / Token 只保存在后台配置；测试与公开调用会按认证方式携带请求头。</p>
+                    <label class="compact-setting-row">认证方式 <select id="custom-provider-auth-type" data-custom-provider-auth-type><option value="none">不需要 Key</option><option value="api_key">API Key 请求头</option><option value="bearer_token">Bearer Token</option></select></label>
+                    <label class="compact-setting-row">Header 名 <input id="custom-provider-auth-name" data-custom-provider-auth-name placeholder="x-api-key 或 Authorization"></label>
+                    <label class="compact-setting-row">Key/Token <input id="custom-provider-auth-value" data-custom-provider-auth-value type="password" placeholder="无需认证可留空"></label>
+                    <div class="compact-action-row"><button type="button" class="secondary" data-autofill-provider-id>自动生成 Provider ID</button><button type="button" class="secondary" data-clear-custom-provider-form>清空表单</button></div>
+                  </div>
+                  <input type="hidden" id="custom-provider-provides"><input type="hidden" id="custom-provider-field-paths" value="{}"><input type="hidden" id="custom-provider-transforms" value="{}">
+                </form>
+              </section>
+              <section class="subpanel provider-workbench-panel" data-provider-scan-panel data-provider-workbench-step="扫描字段">
+                <h3>扫描结果</h3>
+                <form id="custom-provider-preview-form" data-e2e-custom-provider-preview class="compact-settings-body" data-compact-settings-body>
+                  <p class="small help" data-form-help>请求一次 Provider，扫描 raw JSON 叶子字段；勾选要使用的字段，右侧会生成绑定行。</p>
+                  <label class="compact-setting-row">测试 IP <input id="custom-provider-preview-ip" placeholder="8.8.8.8"></label>
+                  <label class="compact-setting-row">Provider ID <input id="custom-provider-preview-id" placeholder="留空使用左侧表单"></label>
+                  <label class="pill compact-setting-row compact-toggle"><input type="checkbox" data-apply-preview-mapping> 从测试结果生成字段映射</label>
+                  <button type="submit" data-custom-provider-scan-fields>扫描 Provider 字段</button>
+                </form>
+                <div class="json-tree-picker custom-provider-scan-results" data-json-tree-picker>
+                  <div class="settings-title-row"><h3 class="settings-title-row-title">原始字段</h3><p class="small settings-title-row-description">选择路径后在右侧绑定到系统固定字段。</p></div>
+                  <div id="custom-provider-json-paths" data-custom-provider-scan-results>尚未扫描</div>
                 </div>
-                <input type="hidden" id="custom-provider-provides"><input type="hidden" id="custom-provider-field-paths" value="{}"><input type="hidden" id="custom-provider-transforms" value="{}">
-              </form>
-            </section>
-            <div class="provider-workbench-main-panel" data-provider-workbench-main-panel data-provider-workbench-lab>
-            <div class="provider-workbench-lab-grid">
-            <section class="subpanel provider-workbench-panel" data-provider-scan-panel>
-              <h3>扫描结果</h3>
-              <form id="custom-provider-preview-form" data-e2e-custom-provider-preview class="compact-settings-body" data-compact-settings-body>
-                <p class="small help" data-form-help>请求一次 Provider，扫描 raw JSON 叶子字段；勾选要使用的字段，右侧会生成绑定行。</p>
-                <label class="compact-setting-row">测试 IP <input id="custom-provider-preview-ip" placeholder="8.8.8.8"></label>
-                <label class="compact-setting-row">Provider ID <input id="custom-provider-preview-id" placeholder="留空使用左侧表单"></label>
-                <label class="pill compact-setting-row compact-toggle"><input type="checkbox" data-apply-preview-mapping> 从测试结果生成字段映射</label>
-                <button type="submit" data-custom-provider-scan-fields>扫描 Provider 字段</button>
-              </form>
-              <div class="json-tree-picker custom-provider-scan-results" data-json-tree-picker>
-                <div class="settings-title-row"><h3 class="settings-title-row-title">原始字段</h3><p class="small settings-title-row-description">选择路径后在右侧绑定到系统固定字段。</p></div>
-                <div id="custom-provider-json-paths" data-custom-provider-scan-results>尚未扫描</div>
-              </div>
-            </section>
-            <section class="subpanel provider-workbench-panel" data-provider-binding-panel>
-              <h3>字段绑定</h3>
-              <p class="small help">把 Provider 返回的原始字段路径绑定到系统固定字段，例如 <code>asn.name</code> → <code>asn_owner</code>。</p>
-              <div class="custom-provider-binding-header"><span>原始字段路径</span><span>系统固定字段</span><span>转换</span><span>操作</span></div>
-              <div class="custom-provider-binding-list" data-custom-provider-binding-list><span class="muted">先扫描并勾选原始字段</span></div>
-              <div class="compact-action-row"><button type="button" class="secondary" data-generate-provider-mapping>生成 Provider 字段配置</button></div>
-            </section>
+              </section>
             </div>
-          <section class="subpanel provider-preview-summary" data-provider-preview-summary>
-            <div class="settings-title-row"><h3 class="settings-title-row-title">预览归一化结果</h3><p class="small settings-title-row-description">确认绑定结果后再保存并加入调用链。</p></div>
-            <div class="provider-preview-columns" data-custom-provider-normalized-preview>
-              <div><h4>已成功映射</h4><div data-provider-preview-normalized>尚未预览</div></div>
-              <div><h4>缺失字段</h4><div data-provider-preview-missing>尚未预览</div></div>
-              <div><h4>字段来源</h4><div data-provider-preview-sources>尚未预览</div></div>
+            <div class="provider-workbench-column" data-provider-workbench-right-column>
+              <section class="subpanel provider-workbench-panel" data-provider-binding-panel data-provider-workbench-step="绑定字段">
+                <h3>字段绑定</h3>
+                <p class="small help">把 Provider 返回的原始字段路径绑定到系统固定字段，例如 <code>asn.name</code> → <code>asn_owner</code>。</p>
+                <div class="custom-provider-binding-header"><span>原始字段路径</span><span>系统固定字段</span><span>转换</span><span>操作</span></div>
+                <div class="custom-provider-binding-list" data-custom-provider-binding-list><span class="muted">先扫描并勾选原始字段</span></div>
+                <div class="compact-action-row"><button type="button" class="secondary" data-generate-provider-mapping>生成 Provider 字段配置</button></div>
+              </section>
+              <section class="subpanel provider-preview-summary provider-workbench-panel" data-provider-preview-summary>
+                <div class="settings-title-row"><h3 class="settings-title-row-title">预览归一化结果</h3><p class="small settings-title-row-description">确认绑定结果后再保存并加入调用链。</p></div>
+                <div class="provider-preview-columns" data-custom-provider-normalized-preview>
+                  <div><h4>已成功映射</h4><div data-provider-preview-normalized>尚未预览</div></div>
+                  <div><h4>缺失字段</h4><div data-provider-preview-missing>尚未预览</div></div>
+                  <div><h4>字段来源</h4><div data-provider-preview-sources>尚未预览</div></div>
+                </div>
+                <details data-custom-provider-raw-toggle><summary>查看原始返回</summary><pre id="custom-provider-preview-json">尚未测试</pre></details>
+              </section>
             </div>
-            <details data-custom-provider-raw-toggle><summary>查看原始返回</summary><pre id="custom-provider-preview-json">尚未测试</pre></details>
-          </section>
-          <div class="provider-action-bar" data-provider-action-bar data-provider-workbench-finish>
+          </div>
+          <div class="provider-action-bar" data-provider-action-bar data-provider-workbench-finish data-provider-workbench-step="验证并启用">
             <label>启用范围 <select data-custom-provider-enable-scope><option value="save-only">只保存，不启用</option><option value="admin-lookup">启用到后台调试</option><option value="public-verified">启用到公开接口，需要验证保护</option></select></label>
             <button type="submit" form="custom-provider-form">只保存 / 更新 Provider</button>
             <button type="button" class="secondary" data-custom-provider-preview-action>预览归一化结果</button>
           </div>
-            </div>
           <div id="custom-provider-list" style="margin-top:12px"></div>
         </div>
       </div>
