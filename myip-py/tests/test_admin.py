@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -7,6 +8,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.api.admin import admin_ip_lookup_provider
 from app.core.config import get_settings
+from app.services.admin_auth import SESSION_COOKIE, signed_session_value
+from app.services.admin_config import admin_fields
 from app.services.ip_lookup import IPInfo, IPLookupUnavailable, StaticIPLookupProvider
 
 
@@ -29,8 +32,8 @@ class AdminAuthSettings:
     myip_doh_timeout_seconds = 5.0
     myip_doh_providers = "cloudflare,google,quad9"
     myip_admin_username = "admin"
-    myip_admin_password = "admin"
-    myip_admin_session_secret = "test-session-secret"
+    myip_admin_password = "safe-admin-password"
+    myip_admin_session_secret = "test-session-secret-minimum-length"
 
     def key_status(self):
         return {
@@ -59,8 +62,9 @@ def enable_admin_auth() -> None:
 
 
 def admin_client() -> TestClient:
+    enable_admin_auth()
     client = TestClient(app)
-    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+    login = client.post("/admin/login", data={"username": "admin", "password": "safe-admin-password"}, follow_redirects=False)
     assert login.status_code == 303
     return client
 
@@ -91,7 +95,7 @@ def test_admin_login_session_allows_page_and_api_access():
     enable_admin_auth()
     client = TestClient(app)
 
-    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+    login = client.post("/admin/login", data={"username": "admin", "password": "safe-admin-password"}, follow_redirects=False)
 
     assert login.status_code == 303
     assert login.headers["location"] == "/admin"
@@ -102,7 +106,7 @@ def test_admin_login_session_allows_page_and_api_access():
 def test_admin_logout_clears_login_session():
     enable_admin_auth()
     client = TestClient(app)
-    assert client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False).status_code == 303
+    assert client.post("/admin/login", data={"username": "admin", "password": "safe-admin-password"}, follow_redirects=False).status_code == 303
 
     logout = client.post("/admin/logout", follow_redirects=False)
 
@@ -111,13 +115,28 @@ def test_admin_logout_clears_login_session():
     assert client.get("/api/admin/settings").status_code == 401
 
 
-def test_admin_auth_defaults_to_admin_admin_and_can_be_changed_after_login(tmp_path, monkeypatch):
+def test_admin_auth_allows_default_admin_credentials_for_local_setup():
+    class DefaultAdminSettings(AdminAuthSettings):
+        myip_admin_password = "admin"
+        myip_admin_session_secret = "change-me"
+
+    app.dependency_overrides[get_settings] = lambda: DefaultAdminSettings()
+    client = TestClient(app)
+
+    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+
+    assert login.status_code == 303
+    assert login.headers["location"] == "/admin"
+    assert client.get("/api/admin/settings").status_code == 200
+
+
+def test_admin_auth_can_be_changed_after_login(tmp_path, monkeypatch):
     config_path = tmp_path / "provider-config.json"
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
     enable_admin_auth()
     client = TestClient(app)
 
-    login = client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False)
+    login = client.post("/admin/login", data={"username": "admin", "password": "safe-admin-password"}, follow_redirects=False)
 
     assert login.status_code == 303
     assert client.get("/api/admin/auth-config").json() == {"username": "admin", "password_configured": True}
@@ -140,6 +159,21 @@ def test_admin_auth_defaults_to_admin_admin_and_can_be_changed_after_login(tmp_p
     assert client.post("/admin/login", data={"username": "root", "password": "new-pass"}, follow_redirects=False).status_code == 303
     assert client.get("/api/admin/settings").status_code == 200
 
+def test_admin_default_field_catalog_matches_go_identity_mapping(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
+
+    fields = {field["field"]: field for field in admin_fields()}
+
+    assert fields["asn_owner"]["providers"]["ipwho.is"] == ["connection.isp"]
+    assert "ipinfo.io" not in fields["asn_owner"]["providers"]
+    assert "ipdata.co" not in fields["asn_owner"]["providers"]
+    assert fields["org"]["providers"]["ipwho.is"] == ["connection.org"]
+    assert "ipinfo.io" not in fields["org"]["providers"]
+    assert "ipdata.co" not in fields["org"]["providers"]
+    assert "ipwho.is" not in fields["asn_domain"]["providers"]
+    assert fields["org_domain"]["providers"]["ipwho.is"] == ["connection.domain"]
+
+
 def test_admin_page_serves_provider_management_shell():
     client = admin_client()
 
@@ -152,7 +186,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "修改后台账号" in body
     assert "data-admin-auth-settings" in body
     assert "/api/admin/auth-config" in body
-    assert "默认用户名 admin / 默认密码 admin" in body
+    assert "后台账号需要在环境变量中设置安全密码和会话密钥" in body
     assert "管理控制台" in body
     assert "1. 网站概览" in body
     assert "2. 字段与数据源映射" in body
@@ -206,24 +240,34 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-overview-status-card" in body
     assert "data-public-control-card" in body
     assert "字段视图" in body
-    assert "Provider 总览" in body
-    assert "Provider 视图与原 Provider 概览已合并" in body
-    assert "Provider 配置已合并到 Provider 总览" in body
-    assert "调用链顺序" in body
+    assert "Provider 调用链" in body
+    assert "Provider 视图与原 Provider 概览已合并" not in body
+    assert "Provider 配置已合并到 Provider 总览" not in body
+    assert "调用链顺序" not in body
     assert "data-provider-move-up" in body
     assert "data-provider-move-down" in body
-    assert "data-provider-timeout-preset" in body
-    assert "快速 1s" in body
-    assert "标准 2s" in body
-    assert "宽松 5s" in body
-    assert "data-provider-runtime-summary" in body
+    assert "data-provider-timeout-mode" in body
+    assert "data-provider-timeout-custom" in body
+    assert 'class="provider-enable-toggle"><input type="checkbox" data-provider-enabled="${esc(provider.id)}" ${merged.enabled ? \'checked\' : \'\'}> 启用</label><span class="provider-order-actions"' in body
+    assert 'class="secondary" data-provider-move-up="${esc(provider.id)}">上移</button><button type="button" class="secondary" data-provider-move-down="${esc(provider.id)}">下移</button>' in body
+    assert 'data-provider-move-up="${esc(provider.id)}">↑</button>' not in body
+    assert "data-provider-timeout-preset" not in body
+    assert "快速 1s" not in body
+    assert "标准 2s" not in body
+    assert "宽松 5s" not in body
+    assert "data-provider-runtime-summary" not in body
     assert "provider-control-row" in body
     assert "field-source-control-row" in body
+    assert ".field-group-cards { display:grid; grid-template-columns:1fr; gap:10px; align-items:start; }" in body
+    assert ".field-group-cards > .card { width:100%; min-width:0; }" in body
+    assert ".field-group-cards { display:flex" not in body
+    assert ".field-group-cards > .card { flex:" not in body
     assert ".provider-control-row, .field-source-control-row { display:flex" in body
     assert ".provider-control-row button, .field-source-control-row button" in body
-    assert "grid-template-columns:1fr; } .provider-control-row" in body
+    assert ".action-row { display:grid; grid-template-columns:1fr; }" not in body
+    assert ".action-row:not(.provider-control-row):not(.field-source-control-row) { display:grid; grid-template-columns:1fr; }" in body
     assert body.index('data-provider-view') > body.index('id="provider-management"')
-    assert body.index('Provider 总览') < body.index('保存与公开控制')
+    assert body.index('Provider 调用链') < body.index('保存与公开控制')
     assert "新增数据源" in body
     assert "按字段查看评分字段" not in body
     assert "添加自定义 Provider、测试返回 JSON" not in body
@@ -233,7 +277,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-new-data-source" in body
     assert "从测试结果生成字段映射" in body
     assert "data-apply-preview-mapping" in body
-    assert "data-provider-source-row" in body
+    assert "data-field-source-list" in body
     assert "data-field-provider-select" in body
     assert "data-field-path-input" in body
     assert "高级调试" in body
@@ -343,19 +387,58 @@ def test_admin_page_serves_provider_management_shell():
     assert "验证风险" in body
     assert "Provider 卡片" not in body
     assert "data-provider-card" in body
-    assert "步骤 1：基本信息" in body
+    assert "自定义 Provider 工作台" in body
+    assert "配置接口 → 扫描字段 → 绑定字段 → 验证并启用" in body
+    assert "data-custom-provider-workbench" in body
+    assert "data-provider-workbench-flow" in body
+    assert "data-provider-workbench-main-panel" in body
+    assert "data-provider-config-panel" in body
+    assert "data-provider-scan-panel" in body
+    assert "data-provider-binding-panel" in body
+    assert "custom-provider-workbench-grid" in body
+    assert "grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr)" in body
+    assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr) minmax(0,1.45fr)" not in body
+    assert "data-provider-preview-summary" in body
+    assert "data-provider-action-bar" in body
+    assert "data-custom-provider-raw-toggle" in body
+    assert "已成功映射" in body
+    assert "缺失字段" in body
+    assert "字段来源" in body
+    assert "Provider 配置" in body
+    assert "扫描结果" in body
+    assert "字段绑定" in body
     assert "自动生成 Provider ID" in body
     assert "data-autofill-provider-id" in body
-    assert "步骤 2：Endpoint" in body
     assert "接口地址需要包含 {ip}" in body
     assert "data-endpoint-template-help" in body
-    assert "步骤 3：字段映射" in body
-    assert "步骤 4：测试验证" in body
-    assert "步骤 5：启用" in body
+    assert "扫描 Provider 字段" in body
+    assert "data-custom-provider-scan-fields" in body
+    assert "data-custom-provider-scan-results" in body
+    assert "data-custom-provider-path-row" in body
+    assert "data-custom-provider-path-checkbox" in body
+    assert "原始字段路径" in body
+    assert "系统固定字段" in body
+    assert "data-custom-provider-binding-list" in body
+    assert "data-custom-provider-fixed-field-select" in body
+    assert "data-custom-provider-transform-select" in body
+    assert "data-custom-provider-remove-binding" in body
+    assert "删除绑定" in body
+    assert "removeCustomProviderBinding" in body
+    assert "data-generate-provider-mapping" in body
+    assert "data-custom-provider-normalized-preview" in body
     assert "只保存，不启用" in body
     assert "启用到后台调试" in body
     assert "启用到公开接口，需要验证保护" in body
     assert "data-custom-provider-enable-scope" in body
+    assert "步骤 1：基本信息" not in body
+    assert "步骤 2：Endpoint 与认证" not in body
+    assert "步骤 3：扫描返回字段" not in body
+    assert "步骤 4：绑定到固定字段" not in body
+    assert "步骤 5：预览归一化结果" not in body
+    assert "步骤 6：加入调用链" not in body
+    assert "步骤 2.5：认证方式" not in body
+    assert "步骤 3：字段映射" not in body
+    assert "路径 JSON" not in body
     assert "data-section-title-row" in body
     assert "data-section-title-description" in body
     assert "1. 网站概览</h2><p class=\"section-lead small settings-title-row-description\" data-section-title-description" in body
@@ -372,6 +455,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-settings-card-title-row" in body
     assert "运行设置</h3><p class=\"small settings-title-row-description\"" in body
     assert "字段筛选" in body
+    assert "自定义字段" not in body
+    assert "custom-field-form" not in body
+    assert "custom-field-list" not in body
+    assert "data-delete-custom-field" not in body
+    assert "/api/admin/custom-fields" not in body
     assert "settings-card-stack" in body
     assert "compact-settings-body" in body
     assert "compact-setting-row" in body
@@ -379,8 +467,27 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-filter-card" in body
     assert "data-new-data-source-stack" in body
     assert "data-custom-provider-settings-card" in body
-    assert "data-custom-field-settings-card" in body
+    assert "data-custom-field-settings-card" not in body
     assert "data-provider-settings-stack" in body
+    assert "data-provider-ops-section" in body
+    assert "运维与安全" in body
+    assert "data-provider-ops-grid" in body
+    assert "provider-ops-grid" in body
+    assert "保存与公开控制" in body
+    assert "data-public-control-settings" in body
+    assert "data-provider-health-card" in body
+    assert "data-config-transfer-card" in body
+    assert "data-config-transfer-actions" in body
+    assert "compact-inline-action-row" in body
+    assert '.compact-inline-action-row { display:flex; flex-wrap:nowrap; grid-column:1 / -1; gap:6px; align-items:center; }' in body
+    assert '.compact-inline-action-row button { width:auto; min-width:88px; padding:8px 10px; margin:0; white-space:nowrap; }' in body
+    assert "data-api-key-card" in body
+    assert "data-admin-account-card" in body
+    assert body.index('保存与公开控制') < body.index('运维与安全')
+    assert body.index('Provider 健康检查') < body.index('配置导入/导出') < body.index('API Key 指引 / API Key 管理') < body.index('修改后台账号')
+    assert '.provider-ops-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }' in body
+    assert '.provider-ops-grid > .subpanel { margin-top:0; }' in body
+    assert "data-provider-config-panel" in body
     assert "data-provider-config-actions" in body
     assert "data-health-check-settings" in body
     assert "data-import-export-settings" in body
@@ -394,9 +501,11 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-filter" in body
     assert "data-field-summary-row" in body
     assert "data-field-detail" in body
-    assert "Provider 覆盖摘要" in body
-    assert "data-provider-coverage-summary" in body
-    assert "data-provider-field-details" in body
+    assert "Provider 覆盖摘要" not in body
+    assert "data-provider-chain-list" in body
+    assert "data-provider-coverage-summary" not in body
+    assert "[data-provider-chain-list] { grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:10px; }" in body
+    assert "data-provider-field-details" not in body
     assert "映射问题提示" in body
     assert "data-mapping-issues" in body
     assert "mapping-issues-row" in body
@@ -432,6 +541,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-source-list" in body
     assert "data-field-source-move-up" in body
     assert "data-field-source-move-down" in body
+    assert "data-field-source-remove" in body
+    assert "删除来源" in body
+    assert "removeFieldSource" in body
     assert "高级 JSON 编辑" in body
     assert "默认建议使用上面的来源列表" in body
     assert "data-field-mapping-editor" in body
@@ -456,10 +568,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "fetch(endpoints.providerConfigReset, {method:'POST'})" in body
     assert "字段与数据源映射" in body
     assert "自定义 Provider" in body
-    assert "自定义字段" in body
     assert "/api/admin/custom-providers" in body
-    assert "/api/admin/custom-fields" in body
-    assert "测试自定义 Provider" in body
+    assert "扫描 Provider 字段" in body
     assert "/api/admin/custom-providers/preview" in body
     assert "可参与后台" in body
     assert "允许自定义 Provider 用于公开接口" in body
@@ -474,13 +584,12 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-confirm-reset" in body
     assert "重置会删除当前保存的后台配置" in body
     assert "data-form-help" in body
-    assert "示例：" in body
-    assert "JSON 校验" in body
+    assert "表单提交前会校验 JSON" not in body
+    assert "JSON 校验" not in body
     assert "没有已保存的自定义 Provider" in body
-    assert "没有已保存的自定义字段" in body
     assert "清空表单" in body
     assert "data-clear-custom-provider-form" in body
-    assert "data-clear-custom-field-form" in body
+    assert "data-clear-custom-field-form" not in body
     assert "color-scheme: light" in body
     assert "data-light-admin-theme" in body
     assert "data-mobile-layout" in body
@@ -493,15 +602,45 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-runtime-settings-panel" in body
     assert "provider-config-mobile-row" in body
     assert "provider-config-mobile-controls" in body
-    assert "data-provider-config-mobile-three-col" in body
-    assert "grid-template-columns:repeat(3,minmax(0,1fr))" in body
+    assert "data-provider-config-compact" in body
+    assert "provider-card-title-row" in body
+    assert "provider-title-main" in body
+    assert "provider-enable-toggle" in body
+    assert "provider-order-actions" in body
+    assert ".provider-order-actions button { width:auto; white-space:nowrap; word-break:keep-all; }" in body
+    assert "provider-order-button" not in body
+    assert '覆盖 ${covered.length} 个字段' not in body
+    assert '评分 ${scoringCount} 个' not in body
+    assert '身份字段：${pills(identity)' not in body
+    assert '展开原始路径' not in body
+    assert "data-provider-timeout-mode" in body
+    assert "data-provider-timeout-custom" in body
+    assert "默认" in body
+    assert "自定义" in body
+    assert "data-provider-timeout-preset" not in body
+    assert "快速 1s" not in body
+    assert "标准 2s" not in body
+    assert "宽松 5s" not in body
+    assert "调用链顺序" not in body
+    assert "数字越小越先尝试" not in body
+    assert "Provider 视图与原 Provider 概览已合并" not in body
+    assert "Provider 配置已合并到 Provider 总览" not in body
+    assert "data-provider-order" in body
+    assert 'type="number" min="1" data-provider-order' not in body
+    assert "grid-template-columns:repeat(3,minmax(0,1fr))" not in body
     assert "provider-config-control" in body
     assert "data-provider-config-id" in body
     assert "provider-config-control-label" in body
     assert "provider-config-control-input" in body
     assert ">配置</strong>" not in body
     assert "provider-config-inline-controls" in body
-    assert "grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr)" in body
+    assert '<div class="action-row provider-control-row provider-config-mobile-controls provider-timeout-row"><label class="provider-config-control provider-timeout-mode"' in body
+    assert '</select></label><label class="provider-config-control provider-timeout-custom" data-provider-timeout-custom="${esc(provider.id)}" hidden>' in body
+    assert ".provider-timeout-row .provider-config-control { display:inline-flex; align-items:center; grid-template-columns:none; flex-direction:row; }" in body
+    assert ".provider-timeout-mode select { width:104px; }" in body
+    assert ".provider-timeout-custom input { width:64px; }" in body
+    assert 'data-provider-move-down="${esc(provider.id)}">下移</button><label class="provider-config-control provider-timeout-mode"' not in body
+    assert "grid-template-columns:minmax(96px,.9fr) minmax(0,2.1fr)" not in body
     assert "minmax(0,1fr)" in body
     assert "collectProviderConfig().runtime_settings" in body
     assert body.index('id="mapping-workspace"') < body.index('id="provider-management"')
@@ -836,13 +975,15 @@ def test_admin_fields_api_marks_scoring_and_display_only_fields():
     assert fields["isp"]["source_type"] == "identity_text"
     assert fields["isp"]["used_for"] == ["display", "compatibility"]
     assert fields["isp"]["scoring_details"]["participates"] is False
-    assert fields["isp"]["provider_priority"] == ["ipapi.is", "ipwho.is", "ipinfo.io", "ipdata.co", "ip-api.com", "ipapi.org"]
+    assert fields["isp"]["provider_priority"] == ["ipapi.is", "ipwho.is", "ip-api.com", "ipapi.org"]
     assert fields["asn_owner"]["providers"]["ipapi.is"] == ["asn.org"]
-    assert fields["asn_owner"]["providers"]["ipinfo.io"] == ["asn.name", "asn_name", "as_name"]
+    assert "ipinfo.io" not in fields["asn_owner"]["providers"]
+    assert "ipdata.co" not in fields["asn_owner"]["providers"]
     assert fields["asn_owner"]["providers"]["ipwho.is"] == ["connection.isp"]
-    assert fields["asn_owner"]["provider_priority"][:3] == ["ipapi.is", "ipinfo.io", "ipdata.co"]
+    assert fields["asn_owner"]["provider_priority"] == ["ipapi.is", "ipwho.is", "ip-api.com", "ipapi.org"]
     assert fields["org"]["providers"]["ipapi.is"] == ["company.name"]
-    assert fields["org"]["providers"]["ipinfo.io"] == ["hostname"]
+    assert "ipinfo.io" not in fields["org"]["providers"]
+    assert "ipdata.co" not in fields["org"]["providers"]
     assert fields["org"]["providers"]["ipwho.is"] == ["connection.org"]
     assert fields["ip_source"]["scoring_details"]["rule"] == "比较注册归属地 reg_region 与实际出口 country_code/country"
     assert fields["is_hosting"]["scoring"] is True
@@ -1626,6 +1767,13 @@ def test_admin_custom_provider_preview_fetches_json_and_extracts_mapped_fields(t
         "fraud_score": 42,
     }
     assert body["raw"]["asn"]["name"] == "Google LLC"
+    assert body["flattened_paths"] == [
+        {"path": "asn.name", "type": "string", "value_preview": "Google LLC", "mapped_field": "asn_owner"},
+        {"path": "asn.number", "type": "string", "value_preview": "AS15169", "mapped_field": "asn"},
+        {"path": "location.country", "type": "string", "value_preview": "United States", "mapped_field": "country"},
+        {"path": "risk.score", "type": "string", "value_preview": "42", "mapped_field": "fraud_score"},
+        {"path": "security.proxy", "type": "string", "value_preview": "true", "mapped_field": "is_proxy"},
+    ]
     provider = client.get("/api/admin/provider-config").json()["custom_providers"][0]
     assert provider["last_preview"]["status"] == "ok"
     assert provider["last_preview"]["ip"] == "8.8.8.8"
@@ -1863,52 +2011,52 @@ def test_admin_custom_provider_api_rejects_builtin_conflict(tmp_path, monkeypatc
     assert response.status_code == 422
 
 
-def test_admin_custom_field_api_persists_metadata_and_merges_field_list(tmp_path, monkeypatch):
-    config_path = tmp_path / "provider-config.json"
-    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = admin_client()
-    payload = {
-        "field": "fraud_score",
-        "label": "欺诈评分",
-        "type": "int",
-        "source_type": "custom",
-        "used_for": ["display", "debug"],
-        "providers": {"example-provider": ["risk.score"]},
-    }
-
-    response = client.post("/api/admin/custom-fields", json=payload)
-
-    assert response.status_code == 200
-    custom = response.json()["custom_fields"][0]
-    assert custom["field"] == "fraud_score"
-    assert custom["scoring"] is False
-    assert custom["custom"] is True
-
-    fields = {field["field"]: field for field in client.get("/api/admin/fields").json()}
-    assert fields["fraud_score"]["label"] == "欺诈评分"
-    assert fields["fraud_score"]["providers"] == {"example-provider": ["risk.score"]}
-
-
-def test_admin_custom_field_delete_removes_metadata(tmp_path, monkeypatch):
-    config_path = tmp_path / "provider-config.json"
-    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
-    client = admin_client()
-    client.post("/api/admin/custom-fields", json={"field": "delete_field", "label": "Delete field", "type": "string"})
-
-    response = client.delete("/api/admin/custom-fields/delete_field")
-
-    assert response.status_code == 200
-    assert response.json()["custom_fields"] == []
-    assert "delete_field" not in {field["field"] for field in client.get("/api/admin/fields").json()}
-
-
-def test_admin_custom_field_api_rejects_builtin_conflict(tmp_path, monkeypatch):
+def test_admin_custom_field_api_is_removed(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", tmp_path / "provider-config.json")
     client = admin_client()
 
-    response = client.post("/api/admin/custom-fields", json={"field": "network_type", "label": "Conflict", "type": "string"})
+    create_response = client.post(
+        "/api/admin/custom-fields",
+        json={"field": "fraud_score", "label": "欺诈评分", "type": "int"},
+    )
+    delete_response = client.delete("/api/admin/custom-fields/fraud_score")
 
-    assert response.status_code == 422
+    assert create_response.status_code == 404
+    assert delete_response.status_code == 404
+
+
+def test_admin_ignores_legacy_custom_fields_when_reading_config(tmp_path, monkeypatch):
+    config_path = tmp_path / "provider-config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": [],
+                "field_overrides": {"fraud_score": {"enabled": True}, "network_type": {"enabled": False}},
+                "field_mappings": {
+                    "fraud_score": {"providers": {"ipapi.is": ["risk.score"]}, "provider_priority": ["ipapi.is"]},
+                    "network_type": {"providers": {"ipapi.is": ["type"]}, "provider_priority": ["ipapi.is"]},
+                },
+                "custom_providers": [],
+                "custom_fields": [{"field": "fraud_score", "label": "欺诈评分", "type": "int"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.services.admin_config.PROVIDER_CONFIG_PATH", config_path)
+    client = admin_client()
+
+    config_response = client.get("/api/admin/provider-config")
+    fields_response = client.get("/api/admin/fields")
+
+    assert config_response.status_code == 200
+    body = config_response.json()
+    assert body["custom_fields"] == []
+    assert "fraud_score" not in body["field_overrides"]
+    assert "fraud_score" not in body["field_mappings"]
+    assert "network_type" in body["field_overrides"]
+    assert "network_type" in body["field_mappings"]
+    assert "fraud_score" not in {field["field"] for field in fields_response.json()}
 
 
 def test_admin_provider_config_api_reads_defaults_without_creating_file(tmp_path, monkeypatch):

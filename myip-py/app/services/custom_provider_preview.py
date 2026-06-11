@@ -66,8 +66,61 @@ def _run_custom_provider_request(ip: str, provider: dict[str, Any]) -> dict[str,
         "normalized": normalized,
         "field_sources": field_sources,
         "missing_fields": missing_fields,
+        "flattened_paths": flatten_json_paths(raw, provider.get("field_paths", {})),
         "raw": raw,
     }
+
+
+def flatten_json_paths(raw: Any, field_paths: dict[str, list[str]] | None = None) -> list[dict[str, str | None]]:
+    mapped_by_path = {
+        path: field
+        for field, paths in (field_paths or {}).items()
+        for path in paths
+    }
+    flattened: list[dict[str, str | None]] = []
+    for path, value in _leaf_paths(raw):
+        flattened.append(
+            {
+                "path": path,
+                "type": _value_type(value),
+                "value_preview": _value_preview(value),
+                "mapped_field": mapped_by_path.get(path),
+            }
+        )
+    return sorted(flattened, key=lambda item: item["path"])
+
+
+def _leaf_paths(value: Any, prefix: str = "") -> list[tuple[str, Any]]:
+    if isinstance(value, dict):
+        leaves: list[tuple[str, Any]] = []
+        for key, child in value.items():
+            child_path = f"{prefix}.{key}" if prefix else str(key)
+            leaves.extend(_leaf_paths(child, child_path))
+        return leaves
+    if isinstance(value, list):
+        leaves = []
+        for index, child in enumerate(value):
+            child_path = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            leaves.extend(_leaf_paths(child, child_path))
+        return leaves
+    return [(prefix, value)] if prefix else []
+
+
+def _value_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if value is None:
+        return "null"
+    return "string"
+
+
+def _value_preview(value: Any) -> str:
+    preview = str(value)
+    return preview if len(preview) <= 80 else f"{preview[:77]}..."
 
 
 

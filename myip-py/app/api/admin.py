@@ -7,7 +7,6 @@ from fastapi.exceptions import RequestValidationError
 from app.core.config import Settings, get_settings
 from app.services.admin_auth import require_admin_auth
 from app.services.admin_config import (
-    add_custom_field,
     add_custom_provider,
     admin_fields,
     admin_providers,
@@ -15,7 +14,6 @@ from app.services.admin_config import (
     builtin_api_key_status,
     clear_builtin_api_key,
     custom_provider_by_id,
-    delete_custom_field,
     delete_custom_provider,
     import_preview,
     PROVIDER_DEFINITIONS,
@@ -163,16 +161,6 @@ def custom_provider_preview(payload: dict) -> dict:
 @router.delete("/custom-providers/{provider_id}")
 def remove_custom_provider(provider_id: str) -> dict:
     return delete_custom_provider(provider_id)
-
-
-@router.post("/custom-fields")
-def create_custom_field(payload: dict) -> dict:
-    return add_custom_field(payload)
-
-
-@router.delete("/custom-fields/{field}")
-def remove_custom_field(field: str) -> dict:
-    return delete_custom_field(field)
 
 
 @router.get("/provider-config/export")

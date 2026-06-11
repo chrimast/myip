@@ -10,6 +10,9 @@ from app.services.admin_config import read_provider_config, verify_admin_passwor
 SESSION_COOKIE = "myip_admin_session"
 SESSION_VALUE = "authenticated"
 SESSION_AUTH_VERSION = "0"
+INSECURE_ADMIN_PASSWORDS = {"admin", "password", "change-me"}
+INSECURE_SESSION_SECRETS = {"", "change-me", "admin", "password"}
+MIN_SESSION_SECRET_LENGTH = 16
 LOGIN_HTML = """<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -46,6 +49,16 @@ def current_admin_auth() -> dict:
 
 def admin_auth_enabled(settings: Settings) -> bool:
     return bool(settings.myip_admin_password) or bool(current_admin_auth().get("password_hash"))
+
+
+def admin_session_secret_is_secure(settings: Settings) -> bool:
+    secret = settings.myip_admin_session_secret.strip()
+    return len(secret) >= MIN_SESSION_SECRET_LENGTH and secret not in INSECURE_SESSION_SECRETS
+
+
+def admin_env_password_is_secure(settings: Settings) -> bool:
+    password = settings.myip_admin_password.strip()
+    return bool(password) and password not in INSECURE_ADMIN_PASSWORDS
 
 
 def admin_credentials_match(username: str, password: str, settings: Settings) -> bool:

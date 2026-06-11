@@ -363,8 +363,6 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
             "ipwho.is": ["connection.isp", "connection.org"],
             "ip-api.com": ["isp", "org"],
             "ipapi.org": ["isp", "org", "asn.name"],
-            "ipinfo.io": ["hostname"],
-            "ipdata.co": ["asn.name", "organisation", "isp"],
         },
     },
     {
@@ -378,8 +376,6 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
             "ipwho.is": ["connection.org"],
             "ip-api.com": ["org"],
             "ipapi.org": ["org", "asn.name"],
-            "ipinfo.io": ["hostname"],
-            "ipdata.co": ["organisation", "isp", "asn.name"],
         },
     },
     {
@@ -393,8 +389,6 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
             "ipwho.is": ["connection.isp"],
             "ip-api.com": ["as"],
             "ipapi.org": ["asname", "asn.name"],
-            "ipinfo.io": ["asn.name", "asn_name", "as_name"],
-            "ipdata.co": ["asn.name"],
         },
     },
     {
@@ -405,7 +399,6 @@ FIELD_DEFINITIONS: list[dict[str, Any]] = [
         "used_for": ["display", "link"],
         "providers": {
             "ipapi.is": ["asn.domain"],
-            "ipwho.is": ["connection.domain"],
             "ipinfo.io": ["asn.domain", "asn_domain", "as_domain"],
             "ipdata.co": ["asn.domain"],
         },
@@ -498,7 +491,7 @@ def admin_providers(settings: Settings) -> list[dict[str, Any]]:
 def admin_fields() -> list[dict[str, Any]]:
     saved_config = read_provider_config()
     mapping_overrides = saved_config.get("field_mappings", {})
-    return [_field_view(field, mapping_overrides.get(field["field"])) for field in [*FIELD_DEFINITIONS, *saved_config["custom_fields"]]]
+    return [_field_view(field, mapping_overrides.get(field["field"])) for field in FIELD_DEFINITIONS]
 
 
 def _field_view(field: dict[str, Any], mapping_override: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -628,7 +621,7 @@ def reset_provider_config() -> dict[str, Any]:
 
 def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     custom_providers = _normalize_custom_providers(payload.get("custom_providers", []))
-    custom_fields = _normalize_custom_fields(payload.get("custom_fields", []))
+    custom_fields: list[dict[str, Any]] = []
     custom_provider_defaults = {
         provider["id"]: {
             "id": provider["id"],
@@ -639,7 +632,7 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
         for provider in custom_providers
     }
     known_provider_ids = {provider["id"] for provider in PROVIDER_DEFINITIONS} | set(custom_provider_defaults)
-    known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in custom_fields}
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS}
     defaults_by_id = {
         **{provider["id"]: provider for provider in default_provider_config()["providers"]},
         **custom_provider_defaults,
@@ -671,13 +664,15 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_fields: dict[str, dict[str, bool]] = {}
     for field, override in field_overrides.items():
         if field not in known_fields:
-            raise HTTPException(status_code=422, detail=f"unknown field: {field}")
+            continue
         if not isinstance(override, dict):
             raise HTTPException(status_code=422, detail="field override must be an object")
         if "enabled" in override:
             normalized_fields[field] = {"enabled": bool(override["enabled"])}
 
-    field_mappings = _normalize_field_mappings(payload.get("field_mappings", {}), known_fields, known_provider_ids)
+    field_mappings = _normalize_field_mappings(
+        _known_field_mapping_payload(payload.get("field_mappings", {}), known_fields), known_fields, known_provider_ids
+    )
 
     if payload.get("require_custom_provider_preview_ok") and not payload.get("public_custom_providers_enabled"):
         raise HTTPException(
@@ -720,24 +715,9 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
     )
 
 
-def add_custom_field(payload: dict[str, Any]) -> dict[str, Any]:
-    config = read_provider_config(include_secrets=True)
-    fields = [field for field in config["custom_fields"] if field["field"] != payload.get("field")]
-    fields.append(_normalize_custom_field(payload))
-    return write_provider_config({**_persistable_config(config), "custom_fields": fields})
-
-
-def delete_custom_field(field: str) -> dict[str, Any]:
-    config = read_provider_config(include_secrets=True)
-    fields = [item for item in config["custom_fields"] if item["field"] != field]
-    config["field_overrides"].pop(field, None)
-    config.get("field_mappings", {}).pop(field, None)
-    return write_provider_config({**_persistable_config(config), "custom_fields": fields})
-
-
 def save_field_mappings(payload: dict[str, Any]) -> dict[str, Any]:
     config = read_provider_config(include_secrets=True)
-    known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in config["custom_fields"]}
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS}
     known_providers = {provider["id"] for provider in PROVIDER_DEFINITIONS} | {provider["id"] for provider in config["custom_providers"]}
     mappings = _normalize_field_mappings(payload, known_fields, known_providers)
     write_provider_config({**_persistable_config(config), "field_mappings": mappings})
@@ -763,7 +743,7 @@ def record_custom_provider_preview(provider_id: str, preview: dict[str, Any]) ->
 def save_preview_field_mappings(provider_id: str, preview: dict[str, Any]) -> dict[str, dict[str, Any]]:
     config = read_provider_config(include_secrets=True)
     provider = custom_provider_by_id(provider_id)
-    known_fields = {field["field"] for field in FIELD_DEFINITIONS} | {field["field"] for field in config["custom_fields"]}
+    known_fields = {field["field"] for field in FIELD_DEFINITIONS}
     normalized = preview.get("normalized") or {}
     sources = preview.get("field_sources") or {}
     if not isinstance(normalized, dict) or not isinstance(sources, dict):
@@ -1122,6 +1102,12 @@ def _normalize_builtin_api_keys(value: Any) -> dict[str, str]:
     return normalized
 
 
+def _known_field_mapping_payload(value: Any, known_fields: set[str]) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return {field: mapping for field, mapping in value.items() if field in known_fields}
+
+
 def _normalize_field_mappings(value: Any, known_fields: set[str], known_providers: set[str]) -> dict[str, dict[str, Any]]:
     if not isinstance(value, dict):
         raise HTTPException(status_code=422, detail="field_mappings must be an object")
@@ -1146,37 +1132,6 @@ def _normalize_field_mappings(value: Any, known_fields: set[str], known_provider
                 "provider_priority": [*priority, *[provider for provider in providers if provider not in priority]],
             }
     return normalized
-
-
-def _normalize_custom_fields(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        raise HTTPException(status_code=422, detail="custom_fields must be a list")
-    fields = [_normalize_custom_field(field) for field in value]
-    names = [field["field"] for field in fields]
-    if len(names) != len(set(names)):
-        raise HTTPException(status_code=422, detail="duplicate custom field")
-    return sorted(fields, key=lambda field: field["field"])
-
-
-def _normalize_custom_field(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail="custom field must be an object")
-    field = _slug(payload.get("field"), "field")
-    if field in {definition["field"] for definition in FIELD_DEFINITIONS}:
-        raise HTTPException(status_code=422, detail=f"custom field conflicts with built-in field: {field}")
-    field_type = payload.get("type", "string")
-    if field_type not in {"string", "bool", "int", "float", "list", "object"}:
-        raise HTTPException(status_code=422, detail="custom field type is invalid")
-    return {
-        "field": field,
-        "label": _non_empty_text(payload.get("label", field), "label"),
-        "type": field_type,
-        "source_type": payload.get("source_type", "custom"),
-        "scoring": False,
-        "used_for": _string_list(payload.get("used_for", ["display", "debug"]), "used_for"),
-        "providers": _providers_map(payload.get("providers", {})),
-        "custom": True,
-    }
 
 
 def _slug(value: Any, field: str) -> str:

@@ -17,8 +17,8 @@ class AdminAuthSettings:
     myip_doh_timeout_seconds = 5.0
     myip_doh_providers = "cloudflare,google,quad9"
     myip_admin_username = "admin"
-    myip_admin_password = "admin"
-    myip_admin_session_secret = "test-session-secret"
+    myip_admin_password = "safe-admin-password"
+    myip_admin_session_secret = "test-session-secret-minimum-length"
 
     def key_status(self):
         return {
@@ -38,7 +38,7 @@ class AdminAuthSettings:
 def admin_client() -> TestClient:
     app.dependency_overrides[get_settings] = lambda: AdminAuthSettings()
     client = TestClient(app)
-    assert client.post("/admin/login", data={"username": "admin", "password": "admin"}, follow_redirects=False).status_code == 303
+    assert client.post("/admin/login", data={"username": "admin", "password": "safe-admin-password"}, follow_redirects=False).status_code == 303
     return client
 
 
