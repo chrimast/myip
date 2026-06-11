@@ -141,8 +141,11 @@
     .custom-provider-workbench-card { display:grid; gap:14px; }
     .provider-workbench-flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
     .provider-workbench-flow span { display:flex; align-items:center; justify-content:center; min-height:32px; border-radius:6px; background:#fff; color:#1e40af; font-size:12px; font-weight:700; }
-    .custom-provider-workbench-grid { display:grid; grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr); gap:12px; align-items:start; }
+    .overview-public-runtime-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
+    .overview-public-runtime-grid > div { min-width:0; }
+    .custom-provider-workbench-grid { display:grid; grid-template-columns:1fr; gap:12px; align-items:start; }
     .provider-workbench-main-panel { display:grid; gap:12px; min-width:0; }
+    .provider-workbench-lab-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
     .provider-workbench-panel { min-width:0; height:auto; }
     .provider-config-compact { grid-template-columns:1fr; }
     .provider-endpoint-row { grid-template-columns:max-content minmax(0,1fr); }
@@ -161,7 +164,7 @@
     .custom-provider-binding-row { display:grid; grid-template-columns:minmax(140px,1fr) minmax(150px,1fr) minmax(92px,max-content) minmax(84px,max-content); gap:8px; align-items:center; margin-bottom:8px; }
     .custom-provider-binding-row select { width:100%; margin:0; }
     [data-light-admin-theme] { color-scheme: light; }
-    @media (max-width:860px) { .two-col { grid-template-columns:1fr; } .provider-ops-grid { grid-template-columns:1fr; } .custom-provider-workbench-grid { grid-template-columns:1fr; } .provider-preview-columns { grid-template-columns:1fr; } }
+    @media (max-width:860px) { .two-col { grid-template-columns:1fr; } .provider-ops-grid { grid-template-columns:1fr; } .custom-provider-workbench-grid,.provider-workbench-lab-grid,.overview-public-runtime-grid { grid-template-columns:1fr; } .provider-preview-columns { grid-template-columns:1fr; } }
     @media (max-width:720px) { header { padding:22px 16px 18px; } main { padding:16px; } h1 { font-size:26px; } nav:not(.floating-settings-nav) { display:grid; grid-template-columns:1fr; } nav:not(.floating-settings-nav) a { width:100%; justify-content:center; } .floating-settings-nav { display:flex; flex-wrap:nowrap; top:0; margin:0 -16px 10px; padding:4px 6px; border-radius:0; border-left:0; border-right:0; gap:1px; overflow-x:auto; } .floating-settings-nav p { display:none; } .floating-settings-nav a { display:inline-flex; flex:0 0 auto; width:max-content; min-width:max-content; padding:5px 5px; overflow:visible; text-overflow:clip; white-space:nowrap; word-break:keep-all; } .floating-settings-nav strong { font-size:13px; white-space:nowrap; word-break:keep-all; } .floating-settings-nav span { display:none; } .section-shell { padding:14px; border-radius:18px; } .section-heading { display:block; } .category-badge { margin-top:8px; } .grid,.two-col,.subpanel-grid,.field-groups-grid { grid-template-columns:1fr; } .runtime-settings-grid { grid-template-columns:1fr; overflow:visible; padding-bottom:0; } .provider-config-row { display:block; } .provider-config-mobile-row { grid-template-columns:1fr; gap:8px; } .provider-config-mobile-controls { gap:6px; } .provider-config-control { min-width:0; } .provider-config-control-input { width:100%; min-width:0; } .card { padding:14px; border-radius:14px; } input, select, textarea, button { width:100%; margin-right:0; } .compact-settings-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .compact-settings-body p.small, .compact-settings-body pre, .compact-settings-body details { grid-column:1 / -1; } .compact-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; } .compact-setting-row.compact-toggle { display:inline-flex; } .compact-setting-row input:not([type="checkbox"]), .compact-setting-row select { min-width:0; width:72px; max-width:100%; justify-self:end; } .compact-setting-row textarea { min-height:88px; } .compact-action-row { grid-template-columns:repeat(auto-fit,minmax(132px,max-content)); } .runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .runtime-panel-body p.small { grid-column:1 / -1; } .runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; } .runtime-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; } .runtime-setting-row.compact-toggle { display:inline-flex; } .runtime-setting-row input:not([type="checkbox"]), .runtime-setting-row select { min-width:0; width:72px; max-width:100%; margin:0; justify-self:end; } input[type="checkbox"] { width:auto; } .pill { width:auto; } .action-row:not(.provider-control-row):not(.field-source-control-row) { display:grid; grid-template-columns:1fr; } .provider-control-row, .field-source-control-row { display:flex; flex-wrap:nowrap; grid-template-columns:none; } .provider-control-row button, .field-source-control-row button { width:auto; min-width:0; padding:9px 8px; } table, thead, tbody, tr, th, td { display:block; width:100%; } th { display:none; } td { border-bottom:0; padding:6px 0; } tr { border-bottom:1px solid var(--line); padding:10px 0; } }
   </style>
 </head>
@@ -197,13 +200,12 @@
       <div class="section-heading">
         <div>
           <p class="section-eyebrow">状态总览</p>
-          <div class="settings-title-row" data-section-title-row><h2 class="settings-title-row-title">1. 网站概览</h2><p class="section-lead small settings-title-row-description" data-section-title-description>总览与公开接口控制已合并；运行设置已并入网站概览：这里直接显示网站运行配置、公开接口模式、保存配置状态、验证风险和运行开关。</p></div>
+          <div class="settings-title-row" data-section-title-row><h2 class="settings-title-row-title">1. 网站概览</h2><p class="section-lead small settings-title-row-description" data-section-title-description>总览与公开接口控制已合并；运行设置已并入网站概览：这里直接显示网站运行配置、公开接口运行状态、保存配置状态、验证风险和运行开关。</p></div>
         </div>
         <span class="category-badge">公开接口 / 运行设置</span>
       </div>
       <div class="grid">
-        <div id="status-summary" class="card hero-card" data-overview-status-card>加载中</div>
-        <div id="config-status" class="card" data-public-control-card>加载中</div>
+        <div id="public-runtime-overview" class="card hero-card overview-public-runtime-card" data-overview-combined-card>加载中</div>
         <div id="settings" class="card">加载中</div>
       </div>
       <section id="runtime-settings" class="card embedded-panel" data-runtime-settings data-runtime-settings-panel data-site-runtime-settings>
@@ -249,7 +251,7 @@
           <div class="settings-title-row" data-settings-card-title-row><h3 class="settings-title-row-title">自定义 Provider 工作台</h3><p class="small settings-title-row-description">配置接口 → 扫描字段 → 绑定字段 → 验证并启用；保存后可参与后台 <code>/api/admin/lookup</code>，公开 <code>/api/ip</code> 需要显式允许。</p></div>
           <div class="provider-workbench-flow" data-provider-workbench-flow><span>配置接口</span><span>扫描字段</span><span>绑定字段</span><span>验证并启用</span></div>
           <div class="custom-provider-workbench-grid">
-            <section class="subpanel provider-workbench-panel" data-provider-config-panel>
+            <section class="subpanel provider-workbench-panel" data-provider-config-panel data-provider-workbench-setup>
               <h3 class="settings-title-row-title">Provider 配置</h3>
               <form id="custom-provider-form">
                 <div class="compact-settings-body provider-config-compact" data-compact-settings-body>
@@ -266,7 +268,8 @@
                 <input type="hidden" id="custom-provider-provides"><input type="hidden" id="custom-provider-field-paths" value="{}"><input type="hidden" id="custom-provider-transforms" value="{}">
               </form>
             </section>
-            <div class="provider-workbench-main-panel" data-provider-workbench-main-panel>
+            <div class="provider-workbench-main-panel" data-provider-workbench-main-panel data-provider-workbench-lab>
+            <div class="provider-workbench-lab-grid">
             <section class="subpanel provider-workbench-panel" data-provider-scan-panel>
               <h3>扫描结果</h3>
               <form id="custom-provider-preview-form" data-e2e-custom-provider-preview class="compact-settings-body" data-compact-settings-body>
@@ -288,6 +291,7 @@
               <div class="custom-provider-binding-list" data-custom-provider-binding-list><span class="muted">先扫描并勾选原始字段</span></div>
               <div class="compact-action-row"><button type="button" class="secondary" data-generate-provider-mapping>生成 Provider 字段配置</button></div>
             </section>
+            </div>
           <section class="subpanel provider-preview-summary" data-provider-preview-summary>
             <div class="settings-title-row"><h3 class="settings-title-row-title">预览归一化结果</h3><p class="small settings-title-row-description">确认绑定结果后再保存并加入调用链。</p></div>
             <div class="provider-preview-columns" data-custom-provider-normalized-preview>
@@ -297,7 +301,7 @@
             </div>
             <details data-custom-provider-raw-toggle><summary>查看原始返回</summary><pre id="custom-provider-preview-json">尚未测试</pre></details>
           </section>
-          <div class="provider-action-bar" data-provider-action-bar>
+          <div class="provider-action-bar" data-provider-action-bar data-provider-workbench-finish>
             <label>启用范围 <select data-custom-provider-enable-scope><option value="save-only">只保存，不启用</option><option value="admin-lookup">启用到后台调试</option><option value="public-verified">启用到公开接口，需要验证保护</option></select></label>
             <button type="submit" form="custom-provider-form">只保存 / 更新 Provider</button>
             <button type="button" class="secondary" data-custom-provider-preview-action>预览归一化结果</button>
@@ -324,10 +328,10 @@
       </div>
         <div class="card" data-provider-config-panel data-public-control-settings>
           <div class="settings-title-row" data-settings-card-title-row><h3 class="settings-title-row-title">保存与公开控制</h3><p class="small settings-title-row-description">保存 Provider 调用链、运行设置和公开接口开关；重置会回到默认生产链。</p></div>
-          <div class="compact-settings-body" data-compact-settings-body data-provider-config-actions><p>Provider 调用链中的启用状态、顺序、超时覆盖，以及网站概览中的运行设置会在这里一起保存。保存后会影响公开 <code>/api/ip</code>；可通过“恢复默认生产链”删除保存配置并回到默认生产查询链。</p>
+          <div class="compact-settings-body" data-compact-settings-body data-provider-config-actions>
           <label class="pill compact-setting-row compact-toggle"><input type="checkbox" data-public-custom-providers-enabled> 允许自定义 Provider 用于公开接口</label>
           <label class="pill compact-setting-row compact-toggle"><input type="checkbox" data-require-custom-provider-preview-ok> 要求自定义 Provider 验证成功后才用于公开接口</label>
-          <p class="small warn">当前公开接口正在使用的模式会在上方显示；只有显式允许后，自定义 Provider 才能进入公开接口。</p>
+          <p class="small warn">公开接口的当前模式会在上方显示；只有显式允许后，自定义 Provider 才能进入公开接口。</p>
           <div class="compact-action-row"><button id="save-provider-config" type="button" data-e2e-save-provider-config>保存配置</button>
           <button id="reset-provider-config" class="secondary" type="button" data-confirm-reset="重置会删除当前保存的后台配置，并让公开 /api/ip 回到默认生产链。确定继续吗？">恢复默认生产链</button></div>
           <p class="small warn">重置会删除当前保存的后台配置，公开接口会立即回到默认生产链。</p></div>
@@ -354,7 +358,7 @@
         <span class="category-badge">Debug 默认收起</span>
       </div>
       <div class="card" data-lookup-settings-card>
-        <div class="compact-settings-body" data-compact-settings-body><p>输入 IP、域名或 URL，默认只显示关键结论；Provider 调用链、字段来源、禁用字段和原始 JSON 已收起到高级调试中。</p>
+        <div class="compact-settings-body" data-compact-settings-body>
         <form id="lookup-form" class="compact-settings-body" data-compact-settings-body><label class="compact-setting-row">查询目标 <input id="lookup-target" name="target" value="8.8.8.8" autocomplete="off" placeholder="8.8.8.8 或 example.com"></label><button type="submit">查询</button></form></div>
         <div id="lookup-summary" class="grid" style="margin-top:16px"></div>
         <details data-advanced-debug style="margin-top:16px">
@@ -384,9 +388,8 @@
     function applyCustomProviderEnableScope(providerId) { const scope = document.querySelector('[data-custom-provider-enable-scope]')?.value || 'save-only'; const enabled = document.querySelector(`[data-provider-enabled="${providerId}"]`); if (enabled && scope !== 'save-only') enabled.checked = true; if (scope === 'public-verified') { const publicToggle = document.querySelector('[data-public-custom-providers-enabled]'); const requirePreview = document.querySelector('[data-require-custom-provider-preview-ok]'); if (publicToggle) publicToggle.checked = true; if (requirePreview) requirePreview.checked = true; } return scope; }
     function collectCustomProviderForm(providerIdOverride) { syncGeneratedProviderMapping(); const provides = document.getElementById('custom-provider-provides').value.split(',').map(item => item.trim()).filter(Boolean); const authType = document.getElementById('custom-provider-auth-type')?.value || 'none'; const authName = document.getElementById('custom-provider-auth-name')?.value.trim() || ''; const authValue = document.getElementById('custom-provider-auth-value')?.value.trim() || ''; return { id: providerIdOverride || document.getElementById('custom-provider-id').value.trim(), name: document.getElementById('custom-provider-name').value.trim(), endpoint: document.getElementById('custom-provider-endpoint').value.trim(), provides, field_paths: parseJsonInput('custom-provider-field-paths', {}), transforms: parseJsonInput('custom-provider-transforms', {}), requires_key: authType !== 'none', key_name: authName || null, auth: { type: authType, name: authName, value: authValue } }; }
     function publicModeText(status) { return status.uses_admin_provider_config ? '后台保存配置正在影响公开 /api/ip' : '默认生产链'; }
-    function renderStatusSummary(status, providers) { const enabledCount = (providers || []).filter(p => p.enabled).length; document.getElementById('status-summary').innerHTML = `<h3>当前公开接口正在使用</h3><p><strong class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(publicModeText(status))}</strong></p><p>启用 Provider: <strong>${enabledCount}</strong></p><p>验证风险: ${(status.public_custom_provider_warnings || []).length ? pills(status.public_custom_provider_warnings) : '<span class="ok">无</span>'}</p>`; }
-    function renderConfigStatus(status) { document.getElementById('config-status').innerHTML = `<p><strong>公开接口模式</strong>: <span class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(publicModeText(status))}</span></p><p>配置文件: <code>${esc(status.storage_path)}</code></p><p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p><p>公开自定义 Provider: ${status.public_custom_providers_enabled ? '<span class="warn">已允许</span>' : '<span class="ok">未允许</span>'}</p><p>公开自定义 Provider 验证保护: ${status.require_custom_provider_preview_ok ? '<span class="warn">已启用</span>' : '<span class="ok">未启用</span>'}</p><div data-public-custom-provider-warnings>${pills(status.public_custom_provider_warnings || [])}</div>${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}`; }
-    async function refreshConfigStatus() { const status = await loadJson(endpoints.configStatus); const providers = await loadJson(endpoints.providers); renderConfigStatus(status); renderStatusSummary(status, providers); }
+    function renderPublicRuntimeOverview(status, providers) { const enabledCount = (providers || []).filter(p => p.enabled).length; const warnings = status.public_custom_provider_warnings || []; document.getElementById('public-runtime-overview').innerHTML = `<h3>当前公开接口和运行配置</h3><div class="overview-public-runtime-grid"><div><p><strong class="${status.uses_admin_provider_config ? 'warn' : 'ok'}">${esc(publicModeText(status))}</strong></p><p>启用 Provider: <strong>${enabledCount}</strong></p><p>验证风险: ${warnings.length ? pills(warnings) : '<span class="ok">无</span>'}</p></div><div><p>配置文件: <code>${esc(status.storage_path)}</code></p><p>保存配置: ${status.provider_config_exists ? '<span class="warn">存在，正在影响公开 /api/ip</span>' : '<span class="ok">不存在，使用默认生产链</span>'}</p><p>公开自定义 Provider: ${status.public_custom_providers_enabled ? '<span class="warn">已允许</span>' : '<span class="ok">未允许</span>'}</p><p>公开自定义 Provider 验证保护: ${status.require_custom_provider_preview_ok ? '<span class="warn">已启用</span>' : '<span class="ok">未启用</span>'}</p><div data-public-custom-provider-warnings>${pills(warnings)}</div>${status.warning ? `<p class="warn">${esc(status.warning)}</p>` : ''}</div></div>`; }
+    async function refreshConfigStatus() { const status = await loadJson(endpoints.configStatus); const providers = await loadJson(endpoints.providers); renderPublicRuntimeOverview(status, providers); }
     function renderLookup(data) { document.getElementById('lookup-summary').innerHTML = `<div class="card"><strong>目标</strong><p>${esc(data.input)} → <code>${esc(data.resolved_ip)}</code></p></div><div class="card"><strong>Provider</strong><p>${esc(data.debug.provider)}</p></div><div class="card"><strong>IP 属性/来源</strong><p>${esc(data.result.ip_property)} · ${esc(data.result.ip_source)}</p></div><div class="card"><strong>风险</strong><p>${esc(data.result.risk_score)} / 100</p></div>`; document.getElementById('lookup-sources').innerHTML = Object.entries(data.field_sources || {}).map(([field, provider]) => `<span class="pill"><strong>${esc(field)}</strong>: ${esc(provider)}</span>`).join('') || '<span class="muted">无字段来源</span>'; document.getElementById('lookup-attempts').innerHTML = (data.debug.provider_attempts || []).map(attempt => `<span class="pill"><strong>${esc(attempt.provider)}</strong>: ${esc(attempt.status)} · timeout=${esc(attempt.timeout_seconds ?? '默认')}${attempt.error ? ` · ${esc(attempt.error)}` : ''}</span>`).join('') || '<span class="muted">尚无调用记录</span>'; document.getElementById('lookup-disabled-fields').innerHTML = pills(data.debug.disabled_fields || []) || '<span class="muted">无禁用字段</span>'; document.getElementById('lookup-json').textContent = JSON.stringify(data, null, 2); }
     function renderCustomMetadata(config) { document.getElementById('custom-provider-list').innerHTML = (config.custom_providers || []).map(provider => `<span class="pill"><strong>${esc(provider.id)}</strong> ${esc(provider.endpoint)} <span data-preview-status="${esc(provider.id)}">最后验证: ${provider.last_preview ? `${esc(provider.last_preview.status)} · ${esc(provider.last_preview.ip)} · ${esc(provider.last_preview.checked_at)}` : '未验证'}</span> <button type="button" data-load-custom-provider="${esc(provider.id)}">载入</button> <button type="button" data-delete-custom-provider="${esc(provider.id)}">删除</button></span>`).join('') || '<span class="muted">没有已保存的自定义 Provider</span>'; document.querySelectorAll('[data-load-custom-provider]').forEach(button => button.addEventListener('click', () => { const provider = (config.custom_providers || []).find(item => item.id === button.dataset.loadCustomProvider); if (!provider) return; showFeedback(`已载入 ${provider.id}，可以修改后保存或测试验证。`); document.getElementById('custom-provider-id').value = provider.id; document.getElementById('custom-provider-name').value = provider.name; document.getElementById('custom-provider-endpoint').value = provider.endpoint; document.getElementById('custom-provider-provides').value = (provider.provides || []).join(','); document.getElementById('custom-provider-field-paths').value = JSON.stringify(provider.field_paths || {}); document.getElementById('custom-provider-transforms').value = JSON.stringify(provider.transforms || {}); document.getElementById('custom-provider-preview-id').value = provider.id; const auth = provider.auth || {}; const authType = document.getElementById('custom-provider-auth-type'); if (authType) authType.value = auth.type || (provider.requires_key ? 'api_key' : 'none'); const authName = document.getElementById('custom-provider-auth-name'); if (authName) authName.value = auth.name || provider.key_name || ''; const authValue = document.getElementById('custom-provider-auth-value'); if (authValue) authValue.value = auth.value || '';  })); document.querySelectorAll('[data-delete-custom-provider]').forEach(button => button.addEventListener('click', async () => { const response = await fetch(`${endpoints.customProviders}/${encodeURIComponent(button.dataset.deleteCustomProvider)}`, {method:'DELETE'}); if (!response.ok) throw new Error(`删除 Provider 失败 ${response.status}`); renderProviderConfig(await response.json()); await reloadCatalogs(); showFeedback(`已删除自定义 Provider ${button.dataset.deleteCustomProvider}`); })); }
     function providerDefaultTimeout(provider) { const value = Number(provider.timeout_seconds ?? 2); return Number.isFinite(value) && value > 0 ? value : 2; }
@@ -454,7 +457,7 @@
       const [settings, providers, fields, status, runtime] = await Promise.all([loadJson(endpoints.settings), loadJson(endpoints.providers), loadJson(endpoints.fields), loadJson(endpoints.configStatus), loadJson(endpoints.runtimeSettings)]);
       renderRuntimeSettings(runtime);
       await refreshApiKeys();
-      renderConfigStatus(status); renderStatusSummary(status, providers);
+      renderPublicRuntimeOverview(status, providers);
       window.adminProviders = providers; window.adminFields = fields;
       document.getElementById('settings').innerHTML = `<h3>运行配置</h3>${Object.entries(settings.config).map(([k,v]) => `<p><code>${esc(k)}</code>: ${esc(Array.isArray(v) ? v.join(', ') : v)}</p>`).join('')}<h3>Keys</h3>${Object.entries(settings.keys).map(([k,v]) => `<p><code>${esc(k)}</code>: <span class="${v.configured ? 'ok' : 'warn'}">${v.configured ? '已配置' : '未配置'}</span> <span class="muted">${esc(v.source)}</span></p>`).join('')}`;
       renderProviders(providers); renderFields(fields);

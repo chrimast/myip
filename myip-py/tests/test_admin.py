@@ -237,8 +237,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "网站概览" in body
     assert "总览与公开接口控制已合并" in body
     assert "data-site-overview" in body
-    assert "data-overview-status-card" in body
-    assert "data-public-control-card" in body
+    assert "data-overview-status-card" not in body
+    assert "data-public-control-card" not in body
     assert "字段视图" in body
     assert "Provider 调用链" in body
     assert "Provider 视图与原 Provider 概览已合并" not in body
@@ -382,7 +382,13 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-bgp-settings" in body
     assert "/api/admin/runtime-settings" in body
     assert "data-advanced-debug" in body
-    assert "当前公开接口正在使用" in body
+    assert "data-overview-combined-card" in body
+    assert "overview-public-runtime-grid" in body
+    assert "当前公开接口和运行配置" in body
+    assert "当前公开接口正在使用" not in body
+    assert "公开接口模式" not in body
+    assert "Provider 调用链中的启用状态、顺序、超时覆盖，以及网站概览中的运行设置会在这里一起保存" not in body
+    assert "输入 IP、域名或 URL，默认只显示关键结论；Provider 调用链、字段来源、禁用字段和原始 JSON 已收起到高级调试中" not in body
     assert "启用 Provider" in body
     assert "验证风险" in body
     assert "Provider 卡片" not in body
@@ -391,12 +397,13 @@ def test_admin_page_serves_provider_management_shell():
     assert "配置接口 → 扫描字段 → 绑定字段 → 验证并启用" in body
     assert "data-custom-provider-workbench" in body
     assert "data-provider-workbench-flow" in body
-    assert "data-provider-workbench-main-panel" in body
-    assert "data-provider-config-panel" in body
-    assert "data-provider-scan-panel" in body
-    assert "data-provider-binding-panel" in body
-    assert "custom-provider-workbench-grid" in body
-    assert "grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr)" in body
+    assert "data-provider-workbench-setup" in body
+    assert "data-provider-workbench-lab" in body
+    assert "provider-workbench-lab-grid" in body
+    assert "data-provider-workbench-finish" in body
+    assert "grid-template-columns:1fr" in body
+    assert "grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px" in body
+    assert "grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr)" not in body
     assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr) minmax(0,1.45fr)" not in body
     assert "data-provider-preview-summary" in body
     assert "data-provider-action-bar" in body
@@ -561,7 +568,8 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-field-enabled" in body
     assert "Provider 调用链" in body
     assert "禁用字段" in body
-    assert "公开接口模式" in body
+    assert "公开接口模式" not in body
+    assert "当前公开接口和运行配置" in body
     assert "/api/admin/config-status" in body
     assert "恢复默认生产链" in body
     assert "providerConfigReset:'/api/admin/provider-config/reset'" in body
