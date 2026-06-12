@@ -386,10 +386,12 @@ def test_admin_page_serves_provider_management_shell():
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
     assert "main, .section-shell, .card, .subpanel, .custom-provider-workbench-card { box-sizing:border-box; max-width:100%; min-width:0; }" in body
-    assert "@media (max-width:720px) { header { padding:22px 4px 18px; } main { padding:4px; }" in body
-    assert ".floating-settings-nav { display:flex; flex-wrap:nowrap; top:0; margin:0 -4px 10px;" in body
-    assert ".section-shell { padding:6px; border-radius:14px; }" in body
-    assert ".card, .subpanel { padding:8px; border-radius:12px; }" in body
+    assert "@media (max-width:720px) { header { padding:22px 2px 18px; } main { padding:2px; }" in body
+    assert ".floating-settings-nav { display:flex; flex-wrap:nowrap; top:0; margin:0 -2px 10px;" in body
+    assert ".section-shell { padding:4px; border-radius:12px; }" in body
+    assert ".card, .subpanel { padding:6px; border-radius:12px; }" in body
+    assert ".custom-provider-workbench-card { padding:4px; gap:10px; }" in body
+    assert ".custom-provider-workbench-grid { gap:8px; } .provider-workbench-column { gap:8px; } .provider-workbench-panel { padding:6px; }" in body
     assert "main { padding:16px; }" not in body
     assert "main { padding:12px; }" not in body
     assert "main { padding:8px; }" not in body
@@ -445,7 +447,7 @@ def test_admin_page_serves_provider_management_shell():
     assert ".custom-provider-path-row { grid-template-columns:minmax(0,1fr); gap:6px; padding:8px 0; }" in body
     assert ".custom-provider-path-row code { display:block; max-width:100%; overflow-wrap:anywhere; white-space:normal; }" in body
     assert ".custom-provider-path-row .pill { justify-self:start; }" in body
-    assert ".custom-provider-scan-results { overflow-x:visible; }" in body
+    assert ".custom-provider-scan-results { overflow:visible; max-height:none; }" in body
     assert ".custom-provider-binding-row { grid-template-columns:minmax(0,1fr); }" in body
     assert ".custom-provider-binding-row code { display:block; max-width:100%; overflow-wrap:anywhere; white-space:normal; }" in body
     assert ".custom-provider-binding-row button { width:100%; }" in body
