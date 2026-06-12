@@ -385,6 +385,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "runtime-preset-row" not in body
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
+    assert "main, .section-shell, .card, .subpanel, .custom-provider-workbench-card { box-sizing:border-box; max-width:100%; min-width:0; }" in body
+    assert "@media (max-width:720px) { header { padding:22px 12px 18px; } main { padding:12px; }" in body
+    assert "main { padding:16px; }" not in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
     assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
     assert ".runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
