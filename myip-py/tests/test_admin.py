@@ -262,13 +262,13 @@ def test_admin_page_serves_provider_management_shell():
     assert ".field-group-cards > .card { width:100%; min-width:0; }" in body
     assert ".field-card-summary-row { display:grid; grid-template-columns:minmax(140px,1fr) auto auto; align-items:center; gap:8px; }" in body
     assert ".field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:nowrap; min-width:0; }" in body
-    assert ".field-card-status-row { display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; flex-wrap:nowrap; white-space:nowrap; }" in body
+    assert ".field-card-status-row { display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; flex-wrap:nowrap; white-space:nowrap; min-width:0; }" in body
     assert ".field-card-title-row h3 { margin:0; white-space:nowrap; }" in body
     assert ".field-card-summary-row .compact-toggle input[type=\"checkbox\"] { width:auto; min-width:auto; }" in body
-    assert ".field-card-summary-row .pill { width:auto; max-width:100%; }" in body
+    assert ".field-card-summary-row .pill { width:auto; max-width:100%; min-width:0; }" in body
     assert ".field-card-summary-row { grid-template-columns:minmax(0,1fr); gap:6px; }" in body
-    assert ".field-card-status-row { justify-content:flex-start; overflow-x:auto; padding-bottom:2px; }" in body
-    assert ".field-card-status-row .pill { flex:0 0 auto; }" in body
+    assert ".field-card-status-row { justify-content:flex-start; overflow-x:auto; padding-bottom:2px; }" not in body
+    assert ".field-card-status-row .pill { flex:0 0 auto; }" not in body
     assert ".field-card-summary-row { display:flex" not in body
     assert ".field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap" not in body
     assert ".field-card-status-row { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap" not in body
@@ -361,7 +361,8 @@ def test_admin_page_serves_provider_management_shell():
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert ".compact-toggle { display:inline-flex; align-items:center" in body
     assert ".pill.compact-toggle { display:inline-flex; }" in body
-    assert ".compact-toggle input[type=\"checkbox\"] { width:auto; min-width:auto" in body
+    assert ".compact-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
+    assert ".compact-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
     assert ".runtime-setting-row.compact-toggle { display:inline-flex" in body
     assert ".compact-setting-row.compact-toggle { display:inline-flex" in body
     assert ".compact-setting-row.compact-toggle { grid-template-columns:max-content min-content" not in body
@@ -385,7 +386,7 @@ def test_admin_page_serves_provider_management_shell():
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
-    assert ".runtime-setting-row { grid-template-columns:max-content minmax(88px,1fr); gap:4px; font-size:12px; }" in body
+    assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
     assert ".runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
     assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { min-width:0; width:72px;" in body
     assert "data-cache-settings" in body
@@ -427,6 +428,12 @@ def test_admin_page_serves_provider_management_shell():
     assert ".custom-provider-workbench-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }" in body
     assert ".provider-workbench-column { display:grid; gap:12px; min-width:0; }" in body
     assert ".provider-workbench-panel { margin-top:0; min-width:0; height:auto; }" in body
+    assert ".custom-provider-binding-header { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(70px,max-content) minmax(74px,max-content); gap:6px;" in body
+    assert ".provider-binding-panel { overflow-x:auto; }" not in body
+    assert ".custom-provider-binding-header" in body and "min-width:520px" not in body
+    assert ".custom-provider-binding-list { overflow-x:auto; min-width:520px; }" not in body
+    assert ".custom-provider-binding-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(70px,max-content) minmax(74px,max-content); gap:6px;" in body
+    assert ".custom-provider-workbench-grid,.provider-workbench-column,.provider-workbench-panel,.compact-settings-body,.runtime-panel-body { min-width:0; }" in body
     assert "grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr)" not in body
     assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr)" not in body
     assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr) minmax(0,1.45fr)" not in body
