@@ -264,6 +264,11 @@ def test_admin_page_serves_provider_management_shell():
     assert ".field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:nowrap; min-width:0; }" in body
     assert ".field-card-status-row { display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; flex-wrap:nowrap; white-space:nowrap; }" in body
     assert ".field-card-title-row h3 { margin:0; white-space:nowrap; }" in body
+    assert ".field-card-summary-row .compact-toggle input[type=\"checkbox\"] { width:auto; min-width:auto; }" in body
+    assert ".field-card-summary-row .pill { width:auto; max-width:100%; }" in body
+    assert ".field-card-summary-row { grid-template-columns:minmax(0,1fr); gap:6px; }" in body
+    assert ".field-card-status-row { justify-content:flex-start; overflow-x:auto; padding-bottom:2px; }" in body
+    assert ".field-card-status-row .pill { flex:0 0 auto; }" in body
     assert ".field-card-summary-row { display:flex" not in body
     assert ".field-card-title-row { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap" not in body
     assert ".field-card-status-row { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap" not in body
@@ -391,6 +396,9 @@ def test_admin_page_serves_provider_management_shell():
     assert "data-advanced-debug" in body
     assert "data-overview-combined-card" in body
     assert "overview-public-runtime-grid" in body
+    assert ".overview-public-runtime-grid { display:grid; grid-template-columns:1fr; gap:8px; align-items:start; }" in body
+    assert ".overview-public-runtime-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr))" not in body
+    assert ".overview-public-runtime-grid" not in body.split("@media (max-width:860px)", 1)[1].split("@media (max-width:720px)", 1)[0]
     assert "当前公开接口和运行配置" in body
     assert "当前公开接口正在使用" not in body
     assert "公开接口模式" not in body
