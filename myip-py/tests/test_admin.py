@@ -386,8 +386,12 @@ def test_admin_page_serves_provider_management_shell():
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
     assert "main, .section-shell, .card, .subpanel, .custom-provider-workbench-card { box-sizing:border-box; max-width:100%; min-width:0; }" in body
-    assert "@media (max-width:720px) { header { padding:22px 12px 18px; } main { padding:12px; }" in body
+    assert "@media (max-width:720px) { header { padding:22px 8px 18px; } main { padding:8px; }" in body
+    assert ".floating-settings-nav { display:flex; flex-wrap:nowrap; top:0; margin:0 -8px 10px;" in body
+    assert ".section-shell { padding:10px; border-radius:16px; }" in body
+    assert ".card, .subpanel { padding:10px; border-radius:12px; }" in body
     assert "main { padding:16px; }" not in body
+    assert "main { padding:12px; }" not in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
     assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
     assert ".runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
@@ -436,6 +440,10 @@ def test_admin_page_serves_provider_management_shell():
     assert ".custom-provider-binding-header" in body and "min-width:520px" not in body
     assert ".custom-provider-binding-list { overflow-x:auto; min-width:520px; }" not in body
     assert ".custom-provider-binding-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(70px,max-content) minmax(74px,max-content); gap:6px;" in body
+    assert ".custom-provider-binding-header { display:none; }" in body
+    assert ".custom-provider-binding-row { grid-template-columns:minmax(0,1fr); }" in body
+    assert ".custom-provider-binding-row code { display:block; max-width:100%; overflow-wrap:anywhere; white-space:normal; }" in body
+    assert ".custom-provider-binding-row button { width:100%; }" in body
     assert ".custom-provider-workbench-grid,.provider-workbench-column,.provider-workbench-panel,.compact-settings-body,.runtime-panel-body { min-width:0; }" in body
     assert "grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr)" not in body
     assert "grid-template-columns:minmax(240px,.75fr) minmax(0,1.25fr)" not in body
