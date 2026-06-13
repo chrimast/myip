@@ -1,4 +1,3 @@
-import re
 import socket
 from dataclasses import dataclass
 from ipaddress import ip_address

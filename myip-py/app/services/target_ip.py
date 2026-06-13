@@ -88,18 +88,15 @@ def resolve_domain(hostname: str) -> TargetResolution:
         raise invalid_ip_query_error(hostname)
 
     dns_settings = _runtime_dns_settings()
-    last_error: Exception | None = None
     saw_nxdomain = False
     for provider, endpoint in _configured_doh_providers(dns_settings):
         try:
             doh_ips = _lookup_doh(hostname, endpoint, dns_settings)
         except ValueError as exc:
-            last_error = exc
-            if str(exc) == "domain name could not be resolved":
+            if str(exc) == "domain name could be resolved":
                 saw_nxdomain = True
             continue
-        except httpx.HTTPError as exc:
-            last_error = exc
+        except httpx.HTTPError:
             continue
         if doh_ips:
             doh_ips = _sort_ips_for_preference(doh_ips, dns_settings.get("ip_version_preference", "ipv4_first"))

@@ -18,7 +18,7 @@ from app.services.admin_auth import (
     session_is_valid,
 )
 from app.services.http_delivery import GZipMiddleware
-from app.services.vis_network import clear_vis_network_cache, vis_network_response
+from app.services.vis_network import vis_network_response, clear_vis_network_cache
 
 app = FastAPI(title="myip-py", version="0.1.0")
 app.add_middleware(GZipMiddleware)

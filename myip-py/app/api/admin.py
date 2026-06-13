@@ -16,7 +16,6 @@ from app.services.admin_config import (
     custom_provider_by_id,
     delete_custom_provider,
     import_preview,
-    PROVIDER_DEFINITIONS,
     read_provider_config,
     public_admin_auth_config,
     record_custom_provider_preview,
@@ -35,7 +34,6 @@ from app.services.custom_provider_preview import GenericJSONLookupProvider, prev
 from app.services.configured_ip_lookup import (
     apply_field_overrides,
     default_provider_factory,
-    enabled_provider_config,
     lookup_with_config,
 )
 from app.services.ip_lookup import (
