@@ -391,6 +391,7 @@ def test_admin_page_serves_provider_management_shell():
     assert ".section-shell { padding:4px; border-radius:12px; }" in body
     assert ".card, .subpanel { padding:6px; border-radius:12px; }" in body
     assert ".custom-provider-workbench-card { padding:4px; gap:10px; }" in body
+    assert ".provider-workbench-flow { grid-template-columns:1fr 1fr; }" in body
     assert ".custom-provider-workbench-grid { gap:8px; } .provider-workbench-column { gap:8px; } .provider-workbench-panel { padding:6px; }" in body
     assert "body { font-size:14px; line-height:1.5; }" in body
     assert "h1 { font-size:20px; }" in body
@@ -447,11 +448,11 @@ def test_admin_page_serves_provider_management_shell():
     assert ".custom-provider-workbench-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }" in body
     assert ".provider-workbench-column { display:grid; gap:12px; min-width:0; }" in body
     assert ".provider-workbench-panel { margin-top:0; min-width:0; height:auto; }" in body
-    assert ".custom-provider-binding-header { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(70px,max-content) minmax(74px,max-content); gap:6px;" in body
+    assert ".custom-provider-binding-header { display:grid; grid-template-columns:1fr 1fr 70px 74px; gap:6px;" in body
     assert ".provider-binding-panel { overflow-x:auto; }" not in body
     assert ".custom-provider-binding-header" in body and "min-width:520px" not in body
     assert ".custom-provider-binding-list { overflow-x:auto; min-width:520px; }" not in body
-    assert ".custom-provider-binding-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(70px,max-content) minmax(74px,max-content); gap:6px;" in body
+    assert ".custom-provider-binding-row { display:grid; grid-template-columns:1fr 1fr 70px 74px; gap:6px;" in body
     assert ".custom-provider-binding-header { display:none; }" in body
     assert ".custom-provider-path-row { grid-template-columns:minmax(0,1fr); gap:6px; padding:8px 0; }" in body
     assert ".custom-provider-path-row code { display:block; max-width:100%; overflow-wrap:anywhere; white-space:normal; }" in body
