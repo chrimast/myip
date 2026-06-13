@@ -1,140 +1,160 @@
 # myip-py
 
-FastAPI rewrite of the myip IP information query tool.
+IP 信息查询工具，基于 FastAPI 重写。支持多数据源聚合、自定义 Provider、BGP 拓扑可视化、后台管理面板。
+
+## 功能
+
+- **IP / 域名查询** — 输入 IP 或域名，返回地理位置、ASN、ISP 等信息
+- **多数据源容灾** — 内置 ipapi.is / ipwho.is / ip-api.com / ipinfo.io 等 6 个 Provider，自动 fallback
+- **自定义 Provider** — 后台添加任意 JSON API 数据源，自动扫描字段、绑定映射
+- **BGP 拓扑** — 查询 ASN 上游拓扑，支持 vis-network 可视化
+- **后台管理** — 完整的 Web 管理面板（`/admin`），配置 Provider、字段映射、缓存、限流等
+- **Go 兼容** — API 响应格式兼容原 Go 版本
+
+## 项目结构
+
+```
+app/
+├── main.py                 # FastAPI 入口
+├── api/
+│   ├── ip.py               # GET /api/ip — IP 查询
+│   ├── bgp.py              # GET /api/bgp — BGP 拓扑
+│   ├── admin.py            # /api/admin/* — 后台管理 API
+│   └── health.py           # GET /health
+├── core/
+│   └── config.py           # Settings / 环境变量
+└── services/
+    ├── ip_lookup.py        # 多 Provider 聚合查询
+    ├── configured_ip_lookup.py  # 带配置的查询
+    ├── custom_provider_preview.py  # 自定义 Provider 预览
+    ├── bgp.py              # BGP 拓扑获取
+    ├── target_ip.py        # DNS / DoH 解析
+    ├── registry_lookup.py  # IP 注册归属查询
+    ├── admin_config.py     # 管理配置持久化
+    ├── admin_auth.py       # 管理员认证
+    ├── rate_limit.py       # 限流
+    ├── ttl_cache.py        # TTL 缓存
+    ├── http_delivery.py    # GZip 中间件
+    ├── local_ip.py         # 本地 IP 处理
+    └── vis_network.py      # BGP 可视化数据
+
+tests/                      # 176 个测试用例
+static/
+├── index.html              # 前端查询页面
+└── admin.html              # 后台管理面板
+```
+
+## 部署
+
+### Docker Run
+
+```bash
+# 构建镜像
+docker build -t myip .
+
+# 运行
+docker run -d \
+  --name myip \
+  -p 8000:8000 \
+  -e MYIP_CACHE_TTL_SECONDS=120 \
+  myip
+```
+
+访问 `http://localhost:8000`（查询页面）或 `http://localhost:8000/admin`（管理面板）。
+
+### Docker Compose
+
+创建 `docker-compose.yml`：
+
+```yaml
+services:
+  myip:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MYIP_CACHE_TTL_SECONDS=120
+      - MYIP_RATE_LIMIT_PER_MINUTE=60
+    restart: unless-stopped
+```
+
+```bash
+# 启动
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+```
+
+### 从 GHCR 拉取（CI 自动构建）
+
+```bash
+docker pull ghcr.io/chrimast/myip:latest
+docker run -d -p 8000:8000 ghcr.io/chrimast/myip:latest
+```
+
+## 开发
+
+```bash
+# 安装依赖
+pip install -e '.[dev]'
+
+# 运行测试
+python -m pytest tests/ -q
+
+# 启动开发服务器（热重载）
+uvicorn app.main:app --reload --port 8000
+```
+
+### Docker Compose 开发模式
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+挂载本地代码，修改即生效。
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MYIP_DEBUG` | `false` | 调试模式 |
+| `MYIP_CACHE_TTL_SECONDS` | `120` | IP 查询缓存 TTL |
+| `MYIP_RATE_LIMIT_PER_MINUTE` | `60` | 每客户端每分钟请求限制 |
+| `MYIP_PROVIDER_TIMEOUT_SECONDS` | `8.0` | Provider HTTP 超时 |
+| `MYIP_DOH_TIMEOUT_SECONDS` | `5.0` | DoH HTTP 超时 |
+| `MYIP_DOH_PROVIDERS` | `cloudflare,google,quad9` | DoH 提供商 |
 
 ## API
 
-### Health
+### IP 查询
 
 ```bash
-GET /api/health
+GET /api/ip              # 查询请求者 IP
+GET /api/ip?=8.8.8.8     # 查询指定 IP
+GET /api/ip?example.com  # 查询域名
 ```
 
-Returns service status, key presence, and public runtime config.
-
-### IP / domain lookup
-
-Supported URL forms:
+### BGP 拓扑
 
 ```bash
-GET /api/ip
-GET /api/ip?=8.8.8.8
-GET /api/ip?8.8.8.8
-GET /api/ip?=example.com
-GET /api/ip?example.com
+GET /api/bgp?AS15169           # 查询 ASN 上游
+GET /api/bgp?AS15169&limit=5   # 限制上游数量
 ```
 
-Named query parameters such as `?ip=8.8.8.8` are not part of the API.
-
-## Response shape
-
-`GET /api/ip...` returns geo/IP fields plus resolution metadata:
-
-```json
-{
-  "ip": "8.8.8.8",
-  "country": "United States",
-  "country_code": "US",
-  "region": "California",
-  "city": "Mountain View",
-  "asn": "AS15169",
-  "isp": "Google LLC",
-  "latitude": 37.38605,
-  "longitude": -122.08385,
-  "provider": "ipapi.is",
-  "input": "8.8.8.8",
-  "resolved_ip": "8.8.8.8",
-  "resolved_ips": ["8.8.8.8"],
-  "dns_provider": null,
-  "geo_provider": "ipapi.is"
-}
-```
-
-For domain input, `resolved_ips` contains the de-duplicated A / AAAA results and `dns_provider` is `system`, `cloudflare`, `google`, or `quad9`.
-
-## Lookup behavior
-
-- No query string: looks up the requester IP from `request.client.host`.
-- IP input: normalizes IPv4 / IPv6 and looks it up directly.
-- Domain input:
-  1. validates that the input looks like a domain;
-  2. tries system DNS via `socket.getaddrinfo`;
-  3. falls back through configured DoH providers;
-  4. de-duplicates A / AAAA records;
-  5. uses the first resolved IP for the geo/IP provider pipeline.
-
-Default DoH fallback order:
-
-1. Cloudflare: `https://cloudflare-dns.com/dns-query`
-2. Google: `https://dns.google/resolve`
-3. Quad9: `https://dns.quad9.net/dns-query`
-
-## Geo/IP provider fallback
-
-Current provider order:
-
-1. `ipapi.is`
-2. `ipwho.is`
-3. `ip-api.com`
-4. `ipapi.org`
-5. `ipinfo.io`
-6. `ipdata.co`
-
-Provider responses must include an IP matching the requested IP. Mismatched or malformed provider payloads are treated as provider failures and the lookup falls back to the next provider.
-
-Configured provider credentials are passed when available:
-
-- `IPAPI_IS_KEY` -> `ipapi.is` `key` param
-- `IPAPI_ORG_KEY` -> `ipapi.org` `key` param
-- `IPINFO_TOKEN` -> `ipinfo.io` `token` param
-- `IPDATA_KEY` -> `ipdata.co` `api-key` param
-
-## Local/private IP handling
-
-Private, loopback, link-local, and local IPv6 inputs are handled locally and do not call external providers.
-
-## Configuration
-
-Environment variables:
-
-- `MYIP_DEBUG`: health/config debug flag, default `false`.
-- `MYIP_CACHE_TTL_SECONDS`: IP lookup cache TTL, default `120`.
-- `MYIP_RATE_LIMIT_PER_MINUTE`: per-client rate limit, default `60`.
-- `MYIP_PROVIDER_TIMEOUT_SECONDS`: geo/IP provider HTTP timeout, default `8.0`.
-- `MYIP_DOH_TIMEOUT_SECONDS`: DoH HTTP timeout, default `5.0`.
-- `MYIP_DOH_PROVIDERS`: comma-separated DoH provider names, default `cloudflare,google,quad9`.
-
-Supported DoH provider names:
-
-- `cloudflare`
-- `google`
-- `quad9`
-
-## Error behavior
-
-- `422`: malformed IP/domain input, unsupported query strings, or DNS name not found.
-- `429`: per-client rate limit exceeded.
-- `502`: DNS resolver infrastructure unavailable, or all geo/IP lookup providers unavailable.
-
-## Cache and rate limit
-
-The endpoint has in-memory TTL cache and fixed-window per-client rate limiting. Cache hits still count against the rate limit.
-
-## Development sandbox
-
-This project is intended to be developed and tested inside Docker Compose:
+### 后台管理
 
 ```bash
-docker compose -f docker-compose.dev.yml build
-docker compose -f docker-compose.dev.yml run --rm myip python -m pytest -q
-docker compose -f docker-compose.dev.yml up --build myip
+GET  /admin                          # 管理面板页面
+GET  /api/admin/providers            # Provider 列表
+PUT  /api/admin/runtime-settings     # 更新运行时设置
+POST /api/admin/custom-providers     # 添加自定义 Provider
+POST /api/admin/custom-providers/preview  # 预览自定义 Provider
 ```
 
-Live probes:
+## License
 
-```bash
-curl 'http://127.0.0.1:8000/api/health'
-curl 'http://127.0.0.1:8000/api/ip?=8.8.8.8'
-curl 'http://127.0.0.1:8000/api/ip?=example.com'
-curl 'http://127.0.0.1:8000/api/ip?=not-an-ip'
-```
+MIT
