@@ -216,7 +216,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "gap:1px; overflow-x:auto" in body
     assert ".floating-settings-nav p { display:none; }" in body
     assert ".floating-settings-nav a { display:inline-flex; flex:0 0 auto; width:max-content; min-width:max-content; padding:5px 5px; overflow:visible; text-overflow:clip; white-space:nowrap; word-break:keep-all; }" in body
-    assert ".floating-settings-nav strong { font-size:12px; white-space:nowrap; word-break:keep-all; }" in body
+    assert ".floating-settings-nav strong { font-size:14px; white-space:nowrap; word-break:keep-all; }" in body
     assert "grid-template-columns:repeat(6,minmax(0,1fr)); top:0" not in body
     assert "gap:2px; overflow-x:auto" not in body
     assert ".floating-settings-nav strong { font-size:12px; }" not in body
@@ -395,7 +395,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "body { font-size:14px; line-height:1.5; }" in body
     assert "h1 { font-size:20px; }" in body
     assert "h2 { font-size:16px; }" in body
-    assert "h3 { font-size:13px; }" in body
+    assert "h3 { font-size:14px; }" in body
     assert "pre { overflow-wrap:anywhere; white-space:pre-wrap; word-break:break-all; min-width:0; max-width:100%; }" in body
     assert ".compact-setting-row input:not([type=\"checkbox\"]), .compact-setting-row select { min-width:0; width:auto; max-width:100%;" in body
     assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { min-width:0; width:auto; max-width:100%;" in body
