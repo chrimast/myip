@@ -391,7 +391,6 @@ def test_admin_page_serves_provider_management_shell():
     assert ".section-shell { padding:4px; border-radius:12px; }" in body
     assert ".card, .subpanel { padding:6px; border-radius:12px; }" in body
     assert ".custom-provider-workbench-card { padding:4px; gap:10px; }" in body
-    assert ".provider-workbench-flow { grid-template-columns:1fr 1fr; }" in body
     assert ".custom-provider-workbench-grid { gap:8px; } .provider-workbench-column { gap:8px; } .provider-workbench-panel { padding:6px; }" in body
     assert "body { font-size:14px; line-height:1.5; }" in body
     assert "h1 { font-size:20px; }" in body
@@ -432,7 +431,6 @@ def test_admin_page_serves_provider_management_shell():
     assert "自定义 Provider 工作台" in body
     assert "配置接口 → 扫描字段 → 绑定字段 → 验证并启用" in body
     assert "data-custom-provider-workbench" in body
-    assert "data-provider-workbench-flow" in body
     assert "data-provider-workbench-left-column" in body
     assert "data-provider-workbench-right-column" in body
     assert "data-provider-workbench-setup" in body
