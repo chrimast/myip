@@ -563,7 +563,7 @@ def test_admin_page_serves_provider_management_shell():
     assert ".settings-card-stack { display:grid; grid-template-columns:1fr" in body
     assert ".compact-settings-body { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" in body
     assert ".compact-action-row { display:grid; grid-column:1 / -1" in body
-    assert ".compact-settings-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
+    assert ".compact-settings-body { grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); gap:8px; }" in body
     assert "data-field-filter" in body
     assert "data-field-summary-row" in body
     assert "data-field-detail" in body
