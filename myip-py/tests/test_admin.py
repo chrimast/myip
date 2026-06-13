@@ -216,7 +216,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "gap:1px; overflow-x:auto" in body
     assert ".floating-settings-nav p { display:none; }" in body
     assert ".floating-settings-nav a { display:inline-flex; flex:0 0 auto; width:max-content; min-width:max-content; padding:5px 5px; overflow:visible; text-overflow:clip; white-space:nowrap; word-break:keep-all; }" in body
-    assert ".floating-settings-nav strong { font-size:13px; white-space:nowrap; word-break:keep-all; }" in body
+    assert ".floating-settings-nav strong { font-size:12px; white-space:nowrap; word-break:keep-all; }" in body
     assert "grid-template-columns:repeat(6,minmax(0,1fr)); top:0" not in body
     assert "gap:2px; overflow-x:auto" not in body
     assert ".floating-settings-nav strong { font-size:12px; }" not in body
@@ -386,19 +386,28 @@ def test_admin_page_serves_provider_management_shell():
     assert ".runtime-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
     assert "input, select, textarea, button { width:100%; margin-right:0; }" in body
     assert "main, .section-shell, .card, .subpanel, .custom-provider-workbench-card { box-sizing:border-box; max-width:100%; min-width:0; }" in body
-    assert "@media (max-width:720px) { header { padding:22px 2px 18px; } main { padding:2px; }" in body
+    assert "@media (max-width:720px) { body { font-size:14px; line-height:1.5; } header { padding:22px 2px 18px; } main { padding:2px; }" in body
     assert ".floating-settings-nav { display:flex; flex-wrap:nowrap; top:0; margin:0 -2px 10px;" in body
     assert ".section-shell { padding:4px; border-radius:12px; }" in body
     assert ".card, .subpanel { padding:6px; border-radius:12px; }" in body
     assert ".custom-provider-workbench-card { padding:4px; gap:10px; }" in body
     assert ".custom-provider-workbench-grid { gap:8px; } .provider-workbench-column { gap:8px; } .provider-workbench-panel { padding:6px; }" in body
+    assert "body { font-size:14px; line-height:1.5; }" in body
+    assert "h1 { font-size:20px; }" in body
+    assert "h2 { font-size:16px; }" in body
+    assert "h3 { font-size:13px; }" in body
+    assert "pre { overflow-wrap:anywhere; white-space:pre-wrap; word-break:break-all; min-width:0; max-width:100%; }" in body
+    assert ".compact-setting-row input:not([type=\"checkbox\"]), .compact-setting-row select { min-width:0; width:auto; max-width:100%;" in body
+    assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { min-width:0; width:auto; max-width:100%;" in body
+    assert ".provider-endpoint-row { grid-template-columns:1fr; }" in body
+    assert ".category-badge { margin-top:8px; font-size:11px; }" in body
     assert "main { padding:16px; }" not in body
     assert "main { padding:12px; }" not in body
     assert "main { padding:8px; }" not in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
     assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
     assert ".runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
-    assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { min-width:0; width:72px;" in body
+    assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { width:100%; min-width:0; margin:0; }" in body
     assert "data-cache-settings" in body
     assert "data-rate-limit-settings" in body
     assert "data-dns-settings" in body
