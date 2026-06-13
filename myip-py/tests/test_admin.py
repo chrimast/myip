@@ -362,7 +362,7 @@ def test_admin_page_serves_provider_management_shell():
     assert ".compact-toggle { display:inline-flex; align-items:center" in body
     assert ".pill.compact-toggle { display:inline-flex; }" in body
     assert ".compact-setting-row { display:grid; grid-template-columns:max-content minmax(92px,1fr)" in body
-    assert ".compact-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
+    assert ".compact-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; white-space:nowrap; }" in body
     assert ".runtime-setting-row.compact-toggle { display:inline-flex" in body
     assert ".compact-setting-row.compact-toggle { display:inline-flex" in body
     assert ".compact-setting-row.compact-toggle { grid-template-columns:max-content min-content" not in body
@@ -405,7 +405,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "main { padding:12px; }" not in body
     assert "main { padding:8px; }" not in body
     assert ".runtime-heading-toggle { width:auto; } .runtime-heading-toggle input { width:auto; }" in body
-    assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; }" in body
+    assert ".runtime-setting-row { grid-template-columns:minmax(0,1fr) minmax(72px,auto); gap:4px; font-size:12px; white-space:nowrap; }" in body
     assert ".runtime-panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }" in body
     assert ".runtime-setting-row input:not([type=\"checkbox\"]), .runtime-setting-row select { width:100%; min-width:0; margin:0; }" in body
     assert "data-cache-settings" in body
