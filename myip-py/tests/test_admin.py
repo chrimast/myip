@@ -429,7 +429,7 @@ def test_admin_page_serves_provider_management_shell():
     assert "Provider 卡片" not in body
     assert "data-provider-card" in body
     assert "自定义 Provider 工作台" in body
-    assert "配置接口 → 扫描字段 → 绑定字段 → 验证并启用" in body
+    assert "保存后可参与后台" in body
     assert "data-custom-provider-workbench" in body
     assert "data-provider-workbench-left-column" in body
     assert "data-provider-workbench-right-column" in body
