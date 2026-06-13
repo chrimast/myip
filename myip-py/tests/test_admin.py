@@ -393,7 +393,7 @@ def test_admin_page_serves_provider_management_shell():
     assert ".custom-provider-workbench-card { padding:4px; gap:10px; }" in body
     assert ".custom-provider-workbench-grid { gap:8px; } .provider-workbench-column { gap:8px; } .provider-workbench-panel { padding:6px; }" in body
     assert "body { font-size:14px; line-height:1.5; }" in body
-    assert "h1 { font-size:20px; }" in body
+    assert "h1 { font-size:18px; }" in body
     assert "h2 { font-size:16px; }" in body
     assert "h3 { font-size:14px; }" in body
     assert "pre { overflow-wrap:anywhere; white-space:pre-wrap; word-break:break-all; min-width:0; max-width:100%; }" in body
